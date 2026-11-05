@@ -13,13 +13,19 @@ import { useState } from 'react';
 export const MARKE_BLAU = '#24456e';
 
 /** Logos von KaPlan unter `public/logos/`. */
-export type KaPlanLogo = 'Startseite' | 'Planlaufmanagement' | 'Baubetriebsplanung' | 'Projektsteuerung';
+export type KaPlanLogo =
+  | 'Startseite'
+  | 'Planlaufmanagement'
+  | 'Baubetriebsplanung'
+  | 'Projektsteuerung'
+  | 'Leistungsnachweise';
 
 const KAPLAN_TEXT: Record<KaPlanLogo, string> = {
   Startseite: 'KaPlan',
   Planlaufmanagement: 'KaPlan – Planlaufmanagement',
   Baubetriebsplanung: 'KaPlan – Baubetriebsplanung',
   Projektsteuerung: 'KaPlan – Projektsteuerung',
+  Leistungsnachweise: 'KaPlan – Leistungsnachweise',
 };
 
 /**

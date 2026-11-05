@@ -1,0 +1,202 @@
+/*
+ * Gestaltung der Reiter „Leistungen“ und „Einstellungen“, des Dialogs zum
+ * Erfassen einer Leistung und des Excel-Imports. Klassen mit dem Präfix
+ * „ln-le-“ (Leistungen), „ln-imp-“ (Import), „ln-einst-“ und „ln-ab-“
+ * (Einstellungen, Abschnitte) sowie „ln-logo“ (Logos) – Farben, Abstände und
+ * Radien nur aus den Design-Tokens in src/shared/global.css, damit auch der
+ * Farbmodus „kontrast“ greift.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Reiter „Leistungen“                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Suche und Filter links, Knöpfe rechts – bricht bei Platzmangel um */
+.ln-le-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ln-le-filter .select { width: auto; min-width: 150px; max-width: 240px; }
+.ln-le-filter .search { width: 230px; }
+
+.table.ln-le-tabelle td { vertical-align: top; }
+.table.ln-le-tabelle th.ln-le-haken,
+.table.ln-le-tabelle td.ln-le-haken { width: 34px; padding-right: 0; }
+.ln-le-haken input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+.table.ln-le-tabelle td.ln-le-datum { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ln-le-wochentag { display: inline-block; min-width: 22px; color: var(--text-tertiary); }
+/* Leistungstext mit seinen Zeilenumbrüchen */
+.table.ln-le-tabelle td.ln-le-text { white-space: pre-line; min-width: 220px; }
+.ln-le-element { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-tertiary); white-space: normal; }
+/* Abschnitt und Quelle unter dem Text bzw. die Person unter dem Datum – nur, wenn ihre Spalten fehlen */
+.ln-le-meta, .ln-le-wer { display: none; }
+.ln-le-meta { margin-top: 3px; font-size: 11.5px; color: var(--text-tertiary); white-space: normal; }
+.ln-le-wer { margin-top: 2px; font-size: 12.5px; color: var(--text-secondary); white-space: normal; }
+.ln-le-nachweis { font-size: 12.5px; }
+.ln-le-nachweis .link-btn { color: var(--accent); }
+.ln-le-nachweis .link-btn:hover { text-decoration: underline; }
+.ln-le-zu { display: block; font-size: 11.5px; color: var(--text-tertiary); }
+.ln-le-ohne { color: var(--orange-text); font-size: 12.5px; }
+.table.ln-le-tabelle tr.ln-le-gewaehlt td { background: var(--accent-soft); }
+
+/* Leiste, solange Zeilen ausgewählt sind */
+.ln-le-auswahl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 9px 16px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--separator);
+  font-size: 13px;
+}
+.ln-le-auswahl strong { font-variant-numeric: tabular-nums; }
+
+/* Summe der angezeigten Stunden unter der Tabelle */
+.ln-le-summe {
+  display: flex; justify-content: flex-end; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid var(--separator);
+  background: var(--bg-subtle);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.ln-le-summe strong { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+/* Dialog „Leistung erfassen“: Hinweis zum Nachweis unter dem Datum */
+.ln-le-dialog .callout { margin-bottom: 14px; }
+
+/* ------------------------------------------------------------------ */
+/* Excel-Import                                                        */
+/* ------------------------------------------------------------------ */
+
+/* Nach dem Lesen schrumpft die Ablagefläche auf eine Zeile */
+.drop-zone.ln-imp-klein { padding: 10px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.drop-zone.ln-imp-klein .small { opacity: 0.85; }
+
+/* Kennzahlen des Imports */
+.ln-imp-zahlen { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ln-imp-zahl {
+  padding: 8px 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  min-width: 0;
+}
+.ln-imp-zahl strong { display: block; font-size: 20px; line-height: 1.2; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ln-imp-zahl span { display: block; font-size: 11.5px; color: var(--text-secondary); }
+.ln-imp-zahl.neu strong { color: var(--accent); }
+.ln-imp-zahl.ersetzt strong { color: var(--orange-text); }
+.ln-imp-zahl.leer strong { color: var(--text-tertiary); font-weight: 500; }
+
+/* Überschrift eines Abschnitts der Vorschau */
+.ln-imp-titel { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-tertiary); margin-bottom: 6px; }
+
+/* Mitarbeiter der Datei */
+.ln-imp-personen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.ln-imp-personen li { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.ln-imp-personen .mono { font-size: 12px; color: var(--text-secondary); }
+
+/* Projekte der Datei: bei vielen Projekten scrollt die Liste */
+.ln-imp-liste { max-height: 340px; overflow-y: auto; }
+.table.ln-imp-tabelle td { vertical-align: top; }
+.table.ln-imp-tabelle td.ln-imp-zeitraum { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.table.ln-imp-tabelle .ln-imp-menge { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.table.ln-imp-tabelle tr.ln-imp-aus td { color: var(--text-tertiary); }
+.table.ln-imp-tabelle tr.ln-imp-aus .badge { opacity: 0.6; }
+.ln-imp-anlegen { margin-top: 6px; font-size: 12.5px; }
+.ln-imp-ergebnis { display: flex; flex-wrap: wrap; gap: 4px; }
+.ln-imp-warnung { display: block; margin-top: 4px; font-size: 12px; color: var(--orange-text); }
+.ln-imp-nachweise { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.ln-imp-nachweise li { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+
+/* Optionen unter der Vorschau */
+.ln-imp-option { display: flex; flex-direction: column; gap: 3px; }
+.ln-imp-option .hint { font-size: 12px; color: var(--text-tertiary); padding-left: 23px; }
+
+/* Aufklappbare Liste der übersprungenen Zeilen */
+.ln-imp-aufklapp { border: 1px solid var(--separator); border-radius: var(--radius); background: var(--bg-elev); }
+.ln-imp-aufklapp > summary {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 9px 14px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.ln-imp-aufklapp > summary::-webkit-details-marker { display: none; }
+.ln-imp-aufklapp > summary::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-right: 1.5px solid var(--text-tertiary);
+  border-bottom: 1.5px solid var(--text-tertiary);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.ln-imp-aufklapp[open] > summary::before { transform: rotate(45deg); }
+.ln-imp-aufklapp[open] > summary { border-bottom: 1px solid var(--separator); }
+.ln-imp-aufklapp > summary:hover { background: var(--bg-hover); border-radius: var(--radius); }
+.ln-imp-aufklapp-inhalt { max-height: 260px; overflow-y: auto; }
+
+/* ------------------------------------------------------------------ */
+/* Reiter „Einstellungen“                                              */
+/* ------------------------------------------------------------------ */
+
+.ln-einst-knoepfe { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.table.ln-ab-tabelle td.actions .btn-icon { padding: 5px 6px; }
+.ln-ab-hinweis { padding: 12px 20px 16px; border-top: 1px solid var(--separator); }
+
+/* Logos im Druckkopf – auf Weiß wie auf dem Blatt */
+.ln-logo-liste { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ln-logo {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius);
+  padding: 8px 6px 8px 12px;
+  background: var(--bg-elev);
+}
+.ln-logo img { max-height: 36px; max-width: 150px; display: block; }
+
+/* ------------------------------------------------------------------ */
+/* Mittlere Breiten: Die Leistungstabelle rückt zusammen, statt         */
+/* abgeschnitten zu werden                                             */
+/* ------------------------------------------------------------------ */
+@media (max-width: 1180px) {
+  .table.ln-le-tabelle .ln-le-breit { display: none; }
+  .ln-le-meta { display: block; }
+  .table.ln-le-tabelle th, .table.ln-le-tabelle td { padding-left: 10px; padding-right: 10px; }
+  .table.ln-le-tabelle td.ln-le-text { min-width: 150px; }
+  /* Die ganze Zeile öffnet die Leistung – der Stift entfällt */
+  .table.ln-le-tabelle .btn-icon.ln-le-bearbeiten { display: none; }
+  /* Reicht der Platz trotzdem nicht, scrollt die Tabelle quer */
+  .table-scroll.ln-le-scroll { overflow-x: auto; }
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  .table.ln-le-tabelle .ln-le-spalte-wer { display: none; }
+  .ln-le-wer { display: block; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Telefonbreite                                                       */
+/* ------------------------------------------------------------------ */
+@media (max-width: 640px) {
+  .ln-le-filter .select,
+  .ln-le-filter .search { flex: 1 1 160px; max-width: none; width: auto; }
+
+  /* Leistungen als Karten: Haken, Datum, Mitarbeiter und Stunden oben, darunter der Text */
+  .table-stack.ln-le-tabelle tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .table-stack.ln-le-tabelle td { width: auto; padding: 2px 0; }
+  .table-stack.ln-le-tabelle td.ln-le-haken { width: auto; padding-right: 0; }
+  .table-stack.ln-le-tabelle td.ln-le-person { flex: 1 1 auto; min-width: 0; }
+  .table-stack.ln-le-tabelle td.ln-le-text { order: 1; flex-basis: 100%; min-width: 0; }
+  .table-stack.ln-le-tabelle td.ln-le-abschnitt,
+  .table-stack.ln-le-tabelle td.ln-le-nachweis { order: 2; }
+  /* Löschen am Ende der Zeile mit dem Nachweis */
+  .table-stack.ln-le-tabelle td.actions { order: 3; margin-left: auto; padding-top: 0; }
+
+  .ln-imp-zahlen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ln-imp-liste { max-height: none; }
+  /* Projekte der Datei kompakt: Projekt, dann Zeitraum, Menge und Ergebnis in einer Zeile, darunter die Nachweise */
+  .table-stack.ln-imp-tabelle tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .table-stack.ln-imp-tabelle td { width: auto; padding: 0; }
+  .table-stack.ln-imp-tabelle td:first-child,
+  .table-stack.ln-imp-tabelle td:last-child { flex-basis: 100%; }
+  .table-stack.ln-imp-tabelle td.ln-imp-menge { text-align: left; }
+  .table-stack.ln-imp-tabelle td.ln-imp-menge strong { font-weight: 500; }
+  .table-stack.ln-imp-tabelle td.ln-imp-menge div { display: inline; margin-left: 6px; }
+  .table-stack.ln-imp-tabelle .ln-imp-anlegen { margin-top: 4px; }
+}

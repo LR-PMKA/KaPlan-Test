@@ -6,6 +6,7 @@
  *   #/planlauf/…              Planlaufmanagement
  *   #/baubetrieb/…            Baubetriebsplanung
  *   #/projektsteuerung/…      Projektsteuerung
+ *   #/leistungsnachweise/…    Leistungsnachweise
  */
 import { useEffect, useState } from 'react';
 import { BEREICH_IDS, type BereichId } from './bereiche';

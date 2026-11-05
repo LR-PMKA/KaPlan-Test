@@ -1,0 +1,47 @@
+/*
+ * Grundgestaltung des Bereichs „Leistungsnachweise“. Alle Klassen tragen das
+ * Präfix „ln-“, damit sie die anderen Bereiche nicht berühren. Farben,
+ * Abstände und Radien kommen aus den Design-Tokens in src/shared/global.css –
+ * so folgt auch der Farbmodus „kontrast“. Editor, Leistungen und Import
+ * bringen eigene Dateien unter components/ mit.
+ */
+
+/* Kopfzeile eines Projekts über den Reitern */
+.ln-projektkopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ln-projektkopf .ln-projektinfo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.ln-projektkopf .ln-projektinfo > span { display: inline-flex; }
+
+/* Dialoge mit Feldern paarweise nebeneinander; auf dem Telefon untereinander */
+.form-grid.ln-zweispaltig { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Projektkarten: Inhalt oben, auch wenn die Nachbarkarte höher ist */
+.card.ln-projektkarte { display: flex; flex-direction: column; justify-content: flex-start; }
+
+/* Stunden in Tabellen: rechtsbündig, Ziffern gleich breit */
+.table th.ln-stunden, .table td.ln-stunden { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.table td.ln-stunden { font-weight: 600; }
+
+/* „erfasst als …“ unter dem Namen in der Seitenleiste */
+.bearbeiter .ln-erfasst-als { display: block; font-size: 11px; color: var(--text-tertiary); }
+
+/* Hinweis nach einem Ladefehler bzw. bei einem Stand aus einer neueren Fassung –
+   mit Randlinie wie die Hinweisleisten des Planlaufmanagements */
+.ln-ladehinweis { margin-bottom: 18px; }
+.ln-ladehinweis .callout.error { box-shadow: inset 3px 0 0 var(--red); }
+.ln-ladehinweis .callout.warn { box-shadow: inset 3px 0 0 var(--orange); }
+.ln-ladehinweis-knoepfe { gap: 6px; margin-top: 8px; }
+
+@media (max-width: 640px) {
+  .form-grid.ln-zweispaltig { grid-template-columns: minmax(0, 1fr); }
+  /* Gestapelte Tabellen: Stunden links unter den übrigen Angaben, mit Einheit */
+  .table-stack td.ln-stunden { text-align: left; }
+  .table-stack td.ln-stunden::after { content: ' Std.'; font-weight: 400; color: var(--text-tertiary); }
+  /* Knöpfe, die auf dem Telefon entfallen, weil die ganze Karte dasselbe tut */
+  .table.table-stack td.actions.ln-nur-breit { display: none; }
+  /* Mitarbeiter: Kürzel, Name, Status und Löschen in einer Zeile, darunter die Stunden */
+  .table-stack.ln-personen tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .table-stack.ln-personen td { width: auto; }
+  .table-stack.ln-personen td:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+  .table-stack.ln-personen td.actions { order: 1; padding-top: 0; }
+  .table-stack.ln-personen td.ln-stunden { order: 2; flex-basis: 100%; }
+}

@@ -891,16 +891,21 @@ a:hover { text-decoration: underline; }
 /* Wie .topbar-logo: mittig in der Kopfzeile (76 px ohne ihre untere Linie) */
 .start-logo { flex: none; display: flex; align-items: center; height: 75.8px; padding-left: 12px; }
 
-/* Die Kacheln stehen hochkant nebeneinander und sind gleich hoch. */
+/* Die Kacheln stehen hochkant nebeneinander und sind gleich hoch: breit alle
+   vier in einer Reihe, bei mittleren Breiten zwei mal zwei, unter 720 px
+   untereinander (siehe Telefonbreiten unten). */
 .start-kacheln {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 26px;
   align-items: stretch;
   width: 100%;
-  max-width: 990px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 0 24px;
+}
+@media (max-width: 1100px) {
+  .start-kacheln { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 790px; }
 }
 
 .bereich-kachel {

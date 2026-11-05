@@ -32,6 +32,9 @@ const paths: Record<string, string> = {
   kopieren: 'M9 9h11v11H9zM15 9V4H4v11h5',
   // Klemmbrett mit Textzeilen – Protokolle und Projektsteuerung
   protokoll: 'M9 4.5H6.5v16h11v-16H15M9 3h6v3H9zM9.5 11h5M9.5 14.5h5M9.5 18h3',
+  // Blatt mit Uhr – Leistungsnachweise und erfasste Stunden
+  stunden:
+    'M11 21H4.5V3H13l4 4v3.5M13 3v4h4M7.5 8.5h3M7.5 12h3.5M7.5 15.5h2M15.5 21a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zM15.5 14.5v2.2l1.4 1',
   // Workflow-Editor: Rückgängig/Wiederholen, Schrittarten, Start und Ende
   rueckgaengig: 'M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
   wiederholen: 'M15 14l5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13',
