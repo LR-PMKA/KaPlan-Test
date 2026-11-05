@@ -29,11 +29,12 @@ import {
   type ImportVorschau,
   type VorschauProjekt,
 } from '../domain/import';
-import { mitarbeiterName, type LeistungsnachweisDaten } from '../domain/types';
-import { kurzDatum, runden, stundenText } from '../domain/zeitraum';
+import type { LeistungsnachweisDaten } from '../domain/types';
+import { stundenVon } from '../domain/nachweis';
+import { kurzDatum, stundenText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
 import { newId, useStore } from '../store/store';
-import { anzahl } from './common';
+import { anzahl, mitarbeiterAuswahlText, nachNamen } from './common';
 import './leistungen.css';
 
 /* ------------------------------------------------------------------ */
@@ -106,7 +107,7 @@ export function importSummen(v: ImportVorschau): {
   const summe = (feld: 'neu' | 'doppelt' | 'ersetzt' | 'inAbgeschlossenem') => v.projekte.reduce((s, p) => s + p[feld], 0);
   return {
     neu: summe('neu'),
-    stunden: runden(v.plan.neueLeistungen.reduce((s, l) => s + l.stunden, 0)),
+    stunden: stundenVon(v.plan.neueLeistungen),
     doppelt: summe('doppelt'),
     ersetzt: summe('ersetzt'),
     uebersprungen: v.uebersprungen.length,
@@ -216,9 +217,7 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
   const anlegenSetzen = (nummer: string, an: boolean) =>
     setOptionen((o) => ({ ...o, neueProjekte: { ...o.neueProjekte, [nummer]: an } }));
 
-  const aktive = data.mitarbeiter
-    .filter((m) => m.aktiv)
-    .sort((a, b) => a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de'));
+  const aktive = data.mitarbeiter.filter((m) => m.aktiv).sort(nachNamen);
   const neueKuerzel = new Set(vorschau?.plan.neueMitarbeiter.map((m) => m.kuerzel) ?? []);
   const uebersprungen = vorschau?.uebersprungen ?? gelesen?.uebersprungen ?? [];
   const gruende = [...uebersprungen.reduce((m, u) => m.set(u.grund, (m.get(u.grund) ?? 0) + 1), new Map<string, number>())];
@@ -381,7 +380,7 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
                       onChange={(v) => setOptionen((o) => ({ ...o, ersatzMitarbeiterId: v || null }))}
                       options={[
                         { value: '', label: '– nicht übernehmen –' },
-                        ...aktive.map((m) => ({ value: m.id, label: `${m.kuerzel ? `${m.kuerzel}: ` : ''}${mitarbeiterName(m)}` })),
+                        ...aktive.map((m) => ({ value: m.id, label: mitarbeiterAuswahlText(m) })),
                       ]}
                     />
                   </Field>

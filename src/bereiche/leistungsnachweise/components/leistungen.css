@@ -2,7 +2,8 @@
  * Gestaltung der Reiter „Leistungen“ und „Einstellungen“, des Dialogs zum
  * Erfassen einer Leistung und des Excel-Imports. Klassen mit dem Präfix
  * „ln-le-“ (Leistungen), „ln-imp-“ (Import), „ln-einst-“ und „ln-ab-“
- * (Einstellungen, Abschnitte) sowie „ln-logo“ (Logos) – Farben, Abstände und
+ * (Einstellungen, Abschnitte), „ln-logo“ (Logos) sowie „ln-kopf-knoepfe“
+ * (Kartenkopf mit mehreren Knöpfen) – Farben, Abstände und
  * Radien nur aus den Design-Tokens in src/shared/global.css, damit auch der
  * Farbmodus „kontrast“ greift.
  */
@@ -162,8 +163,7 @@
   .table.ln-le-tabelle td.ln-le-text { min-width: 150px; }
   /* Die ganze Zeile öffnet die Leistung – der Stift entfällt */
   .table.ln-le-tabelle .btn-icon.ln-le-bearbeiten { display: none; }
-  /* Reicht der Platz trotzdem nicht, scrollt die Tabelle quer */
-  .table-scroll.ln-le-scroll { overflow-x: auto; }
+  /* Reicht der Platz trotzdem nicht, scrollt die Tabelle quer (.ln-app .table-scroll in leistungsnachweise.css) */
 }
 @media (min-width: 641px) and (max-width: 1000px) {
   .table.ln-le-tabelle .ln-le-spalte-wer { display: none; }
@@ -187,6 +187,9 @@
   .table-stack.ln-le-tabelle td.ln-le-nachweis { order: 2; }
   /* Löschen am Ende der Zeile mit dem Nachweis */
   .table-stack.ln-le-tabelle td.actions { order: 3; margin-left: auto; padding-top: 0; }
+
+  /* Karten mit mehreren Knöpfen im Kopf (Abschnitte, Logos): Knöpfe brechen um, statt abgeschnitten zu werden */
+  .card.ln-kopf-knoepfe > .card-header > .row { flex-wrap: wrap; }
 
   .ln-imp-zahlen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ln-imp-liste { max-height: none; }

@@ -69,7 +69,7 @@ export function LogoVerwaltung({ projekt }: { projekt: Projekt }) {
   };
 
   return (
-    <Card>
+    <Card className="ln-kopf-knoepfe">
       <CardHeader
         titel="Logos im Druckkopf"
         sub={`Oben rechts im Kopf der Leistungsnachweise dieses Projekts – in dieser Reihenfolge${

@@ -7,19 +7,9 @@
 import { useState } from 'react';
 import { useToast } from '../../../shared/toast';
 import { Field, Modal, TextInput } from '../../../shared/ui';
+import { kuerzelFrei, kuerzelNormal } from '../domain/import';
 import { kuerzelAus, mitarbeiterName, type ID, type Mitarbeiter } from '../domain/types';
 import { useStore } from '../store/store';
-
-const kuerzelSchluessel = (k: string) => k.replace(/\s+/g, '').toUpperCase();
-
-/** Ein aus dem Namen gebildetes Kürzel, das noch frei ist: „LR“, sonst „LR2“, „LR3“ … */
-function freiesKuerzel(basis: string, vergeben: Set<string>): string {
-  if (!vergeben.has(kuerzelSchluessel(basis))) return basis;
-  for (let n = 2; ; n++) {
-    const kandidat = `${basis}${n}`;
-    if (!vergeben.has(kuerzelSchluessel(kandidat))) return kandidat;
-  }
-}
 
 export function MitarbeiterDialog({
   mitarbeiter,
@@ -51,15 +41,13 @@ export function MitarbeiterDialog({
       toast('Bitte einen Nachnamen angeben.');
       return;
     }
-    const vergeben = new Set(
-      data.mitarbeiter.filter((m) => m.id !== mitarbeiter?.id).map((m) => kuerzelSchluessel(m.kuerzel)),
-    );
+    const andere = data.mitarbeiter.filter((m) => m.id !== mitarbeiter?.id);
     const eingegeben = form.kuerzel.trim();
-    if (eingegeben && vergeben.has(kuerzelSchluessel(eingegeben))) {
+    if (eingegeben && andere.some((m) => kuerzelNormal(m.kuerzel) === kuerzelNormal(eingegeben))) {
       toast(`Das Kürzel „${eingegeben}“ ist bereits vergeben.`);
       return;
     }
-    const kuerzel = eingegeben || freiesKuerzel(kuerzelAus(`${vorname} ${nachname}`), vergeben);
+    const kuerzel = eingegeben || kuerzelFrei(kuerzelAus(`${vorname} ${nachname}`), andere);
     const werte = { kuerzel, vorname, nachname, aktiv: form.aktiv };
     if (mitarbeiter) {
       updateMitarbeiter(mitarbeiter.id, werte);

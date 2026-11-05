@@ -228,6 +228,11 @@ export function summeStunden(zeilen: NachweisZeile[]): number {
   return runden(zeilen.reduce((s, z) => s + z.stunden, 0));
 }
 
+/** Summe der Stunden einer Auswahl von Leistungen. */
+export function stundenVon(leistungen: Pick<Leistung, 'stunden'>[]): number {
+  return runden(leistungen.reduce((s, l) => s + l.stunden, 0));
+}
+
 /** Überschrift: `titel` oder „Leistungsnachweis <zeitraumText>“. */
 export function nachweisTitel(n: Pick<Leistungsnachweis, 'titel' | 'von' | 'bis'>): string {
   return n.titel.trim() || `Leistungsnachweis ${zeitraumText(n.von, n.bis)}`;

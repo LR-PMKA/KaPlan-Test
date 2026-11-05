@@ -11,6 +11,7 @@ import { Callout, Card, ConfirmDialog, EmptyState, Field, Modal, Select, TextInp
 import { BereichWechsel } from '../../shell/BereichWechsel';
 import { ImportDialog } from './components/ImportDialog';
 import { SicherungEinspielenDialog, SicherungKnopf, SicherungWaehlen, type Sicherung } from './components/Sicherung';
+import { mitarbeiterAuswahlText, nachNamen } from './components/common';
 import { leistungenOhneNachweis, nachweisTitel } from './domain/nachweis';
 import { STANDARD_BEARBEITER, mitarbeiterName, projektTitel, type Leistungsnachweis, type Projekt } from './domain/types';
 import { useRoute, type Route } from './lib/router';
@@ -64,7 +65,7 @@ export function App() {
   const kopf = kopfzeile(route, projekt, nachweis);
 
   return (
-    <div className="app">
+    <div className="app ln-app">
       <aside className={`sidebar ${menuOffen ? 'open' : ''}`}>
         <button type="button" className="sidebar-brand" onClick={() => gehe({ view: 'uebersicht' })} title="Zur Übersicht">
           <KaPlanLogo variante="Leistungsnachweise" width="100%" />
@@ -300,14 +301,8 @@ function BearbeiterDialog({ onClose }: { onClose: () => void }) {
   // Zur Wahl stehen die aktiven Mitarbeiter – und die bisher gewählte Person, auch wenn sie ausgeschieden ist
   const wahl = data.mitarbeiter
     .filter((m) => m.aktiv || m.id === data.einstellungen.mitarbeiterId)
-    .sort((a, b) => a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de'));
-  const optionen = [
-    { value: '', label: '– keiner –' },
-    ...wahl.map((m) => ({
-      value: m.id,
-      label: `${m.kuerzel ? `${m.kuerzel}: ` : ''}${mitarbeiterName(m)}${m.aktiv ? '' : ' (ausgeschieden)'}`,
-    })),
-  ];
+    .sort(nachNamen);
+  const optionen = [{ value: '', label: '– keiner –' }, ...wahl.map((m) => ({ value: m.id, label: mitarbeiterAuswahlText(m) }))];
 
   const mitarbeiterWaehlen = (id: string) => {
     setMitarbeiterId(id);

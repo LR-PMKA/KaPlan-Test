@@ -116,6 +116,23 @@ export function nummerNormal(nummer: string): string {
   return nummer.replace(/\s+/g, '').toUpperCase();
 }
 
+/** Kürzel zum Vergleichen: ohne Leerraum, ohne Rücksicht auf Groß-/Kleinschreibung. */
+export function kuerzelNormal(kuerzel: string): string {
+  return kuerzel.replace(/\s+/g, '').toLowerCase();
+}
+
+/**
+ * Ein noch freies Kürzel: „LR“, sonst „LR2“, „LR3“ …; ist `basis` leer, „MA“.
+ * So legen der Import und der Mitarbeiterdialog neue Personen an.
+ */
+export function kuerzelFrei(basis: string, vorhandene: Pick<Mitarbeiter, 'kuerzel'>[]): string {
+  const vergeben = new Set(vorhandene.map((m) => kuerzelNormal(m.kuerzel)));
+  const grund = basis.trim() || 'MA';
+  let k = grund;
+  for (let n = 2; vergeben.has(kuerzelNormal(k)); n++) k = `${grund}${n}`;
+  return k;
+}
+
 /** „K2476: PS / PLM, Neubau Hp Aalen West“ → { nummer: 'K2476', name: 'PS / PLM, Neubau Hp Aalen West' }; null, wenn keine Nummer. */
 export function projektAusText(text: string): { nummer: string; name: string } | null {
   const m = /^\s*([A-Za-z]{1,3}\s*-?\s*\d{3,})(?![\dA-Za-z])\s*(?:[:\-–—]\s*)?([\s\S]*)$/.exec(text);
@@ -410,12 +427,6 @@ export function importPlanen(
   const bekannteIds = new Set(daten.mitarbeiter.map((m) => m.id));
   const vorlaeufig: Mitarbeiter[] = [];
   const nachText = new Map<string, { vorschau: VorschauMitarbeiter; id: ID }>();
-  const kuerzelFrei = (kuerzel: string) => {
-    const vergeben = new Set(personen.map((m) => m.kuerzel.trim().toLowerCase()));
-    let k = kuerzel || 'MA';
-    for (let n = 2; vergeben.has(k.toLowerCase()); n++) k = `${kuerzel || 'MA'}${n}`;
-    return k;
-  };
   const personZu = (text: string): ID | null => {
     const schluessel = nameNormal(text);
     const bekannt = nachText.get(schluessel);
@@ -427,13 +438,13 @@ export function importPlanen(
     if (!info) return null;
     const name = nameNormal(`${info.vorname} ${info.nachname}`);
     const gefunden =
-      (info.mitKuerzel ? personen.find((m) => m.kuerzel.trim().toLowerCase() === info.kuerzel.toLowerCase()) : undefined) ??
+      (info.mitKuerzel ? personen.find((m) => kuerzelNormal(m.kuerzel) === kuerzelNormal(info.kuerzel)) : undefined) ??
       personen.find((m) => nameNormal(mitarbeiterName(m)) === name);
     let person = gefunden;
     if (!person) {
       person = {
         id: neueId('ma'),
-        kuerzel: kuerzelFrei(info.kuerzel),
+        kuerzel: kuerzelFrei(info.kuerzel, personen),
         vorname: info.vorname,
         nachname: info.nachname,
         aktiv: true,

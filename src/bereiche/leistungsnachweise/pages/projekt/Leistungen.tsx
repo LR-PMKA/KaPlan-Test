@@ -13,11 +13,11 @@ import { useToast } from '../../../../shared/toast';
 import { Card, CardHeader, ConfirmDialog, EmptyState, Search, Select } from '../../../../shared/ui';
 import { ImportDialog } from '../../components/ImportDialog';
 import { LeistungDialog, abgeschlossenHinweis, nachweisName } from '../../components/LeistungDialog';
-import { QuelleBadge, anzahl } from '../../components/common';
+import { QuelleBadge, anzahl, mitarbeiterAuswahlText } from '../../components/common';
 import { leistungenExportieren } from '../../domain/export';
-import { nachweiseVon, nachweisTitel } from '../../domain/nachweis';
+import { nachweiseVon, nachweisTitel, stundenVon } from '../../domain/nachweis';
 import { QUELLE_LABEL, mitarbeiterName, type Leistung, type Leistungsnachweis, type Projekt } from '../../domain/types';
-import { langDatum, monatText, runden, stundenText } from '../../domain/zeitraum';
+import { langDatum, monatText, stundenText } from '../../domain/zeitraum';
 import type { Route } from '../../lib/router';
 import { useStore } from '../../store/store';
 import '../../components/leistungen.css';
@@ -76,7 +76,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
       .toLowerCase()
       .includes(begriff);
   });
-  const summe = runden(sichtbar.reduce((s, l) => s + l.stunden, 0));
+  const summe = stundenVon(sichtbar);
   const gefiltert = aktiverMonat !== ALLE || aktivePerson !== ALLE || !!begriff;
 
   // Ausgewählt zählt nur, was gerade zu sehen ist
@@ -129,7 +129,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
               { value: ALLE, label: 'Alle Mitarbeiter' },
               ...personen.map((id) => {
                 const m = mitarbeiter.get(id);
-                return { value: id, label: m ? `${m.kuerzel ? `${m.kuerzel}: ` : ''}${mitarbeiterName(m)}` : '? (unbekannt)' };
+                return { value: id, label: m ? mitarbeiterAuswahlText(m) : '? (unbekannt)' };
               }),
             ]}
           />
@@ -161,7 +161,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
           <div className="ln-le-auswahl">
             <span>
               <strong>{gewaehlt.length}</strong> ausgewählt ·{' '}
-              <strong>{stundenText(runden(gewaehlt.reduce((s, l) => s + l.stunden, 0)))}</strong> Std.
+              <strong>{stundenText(stundenVon(gewaehlt))}</strong> Std.
             </span>
             <span className="spacer" />
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAuswahl(new Set())}>
@@ -200,7 +200,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
           )
         ) : (
           <>
-            <div className="table-scroll ln-le-scroll">
+            <div className="table-scroll">
               <table className="table table-stack ln-le-tabelle">
                 <thead>
                   <tr>
@@ -376,9 +376,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
       {auswahlLoeschen ? (
         <ConfirmDialog
           titel="Auswahl löschen?"
-          text={`${anzahl(gewaehlt.length, 'Leistung', 'Leistungen')} mit zusammen ${stundenText(
-            runden(gewaehlt.reduce((s, l) => s + l.stunden, 0)),
-          )} Std. ${gewaehlt.length === 1 ? 'wird' : 'werden'} gelöscht.${
+          text={`${anzahl(gewaehlt.length, 'Leistung', 'Leistungen')} mit zusammen ${stundenText(stundenVon(gewaehlt))} Std. ${gewaehlt.length === 1 ? 'wird' : 'werden'} gelöscht.${
             geschlosseneIn(gewaehlt).length
               ? ` Abgeschlossene Nachweise (${geschlosseneIn(gewaehlt).map(nachweisName).join(', ')}) ändern sich erst nach „Wieder öffnen“.`
               : ''

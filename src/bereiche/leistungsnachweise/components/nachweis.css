@@ -105,6 +105,10 @@
   .ln-zeile-leistungen .table-stack td.ln-zeile-leistungstext { order: 1; flex-basis: 100%; }
   .ln-zeile-leistungen .table-stack td.ln-stunden { order: 2; }
   .ln-zeile-leistungen .table-stack td.actions { order: 3; margin-left: auto; padding-top: 0; flex: none; }
+  /* Stunden je Mitarbeiter: so breit wie nötig – ohne Abschnitte passen die drei Spalten
+     ohne Querscrollen, mit vielen Abschnitten scrollt die Tabelle weiterhin quer */
+  .table-scroll > .table.ln-mitarbeiterstunden:not(.table-stack) { min-width: 0; }
+  .table.ln-mitarbeiterstunden th, .table.ln-mitarbeiterstunden td { padding-left: 8px; padding-right: 8px; }
 }
 
 /* Kontrastmodus: Randlinie bearbeiteter Zeilen kräftiger */

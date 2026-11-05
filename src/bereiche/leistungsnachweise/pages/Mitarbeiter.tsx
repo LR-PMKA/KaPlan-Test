@@ -9,11 +9,11 @@ import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Badge, Card, CardHeader, ConfirmDialog, EmptyState, Search } from '../../../shared/ui';
 import { MitarbeiterDialog } from '../components/MitarbeiterDialog';
-import { anzahl } from '../components/common';
+import { anzahl, nachNamen } from '../components/common';
+import { stundenVon } from '../domain/nachweis';
 import { mitarbeiterName, type Mitarbeiter as MitarbeiterTyp, type Projekt } from '../domain/types';
 import { stundenText } from '../domain/zeitraum';
 import { useStore } from '../store/store';
-import { stundenVon } from './Uebersicht';
 
 export function Mitarbeiter() {
   const { data, deleteMitarbeiter } = useStore();
@@ -29,12 +29,7 @@ export function Mitarbeiter() {
   const mitarbeiter = data.mitarbeiter
     .filter((m) => [m.kuerzel, m.vorname, m.nachname].join(' ').toLowerCase().includes(suche.toLowerCase()))
     // Aktive zuerst, dann nach Nachname
-    .sort(
-      (a, b) =>
-        Number(b.aktiv) - Number(a.aktiv) ||
-        a.nachname.localeCompare(b.nachname, 'de') ||
-        a.vorname.localeCompare(b.vorname, 'de'),
-    );
+    .sort((a, b) => Number(b.aktiv) - Number(a.aktiv) || nachNamen(a, b));
   const aktive = data.mitarbeiter.filter((m) => m.aktiv).length;
 
   return (

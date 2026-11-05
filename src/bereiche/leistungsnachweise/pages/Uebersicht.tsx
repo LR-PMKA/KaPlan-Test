@@ -7,17 +7,18 @@ import { formatDate, today } from '../../../shared/dates';
 import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Card, CardHeader, EmptyState, Stat } from '../../../shared/ui';
-import { NachweisStatusBadge, RasterBadge, anzahl } from '../components/common';
+import { NachweisStatusBadge, RasterBadge, anzahl, nachweiseAngelegtText } from '../components/common';
 import {
   bearbeiterVon,
   leistungenOhneNachweis,
   nachweisTitel,
   nachweiseVon,
+  stundenVon,
   summeStunden,
   zeilenFuerAnzeige,
 } from '../domain/nachweis';
-import { projektKurzname, type Leistung, type Projekt } from '../domain/types';
-import { MONATSNAMEN, monatsanfang, monatsende, runden, stundenText, zeitraumText } from '../domain/zeitraum';
+import { projektKurzname, type Projekt } from '../domain/types';
+import { MONATSNAMEN, monatsanfang, monatsende, stundenText, zeitraumText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
 import { useStore } from '../store/store';
 
@@ -25,17 +26,6 @@ import { useStore } from '../store/store';
 export function sichtbareProjekte(projekte: Projekt[]): Projekt[] {
   const markiert = projekte.filter((p) => p.markiert);
   return markiert.length > 0 ? markiert : projekte;
-}
-
-/** Summe der Stunden einer Auswahl von Leistungen. */
-export function stundenVon(leistungen: Leistung[]): number {
-  return runden(leistungen.reduce((s, l) => s + l.stunden, 0));
-}
-
-/** Toast nach „Nachweise anlegen“. */
-export function nachweiseAngelegtText({ neu, erweitert }: { neu: number; erweitert: number }): string {
-  if (neu === 0) return `${anzahl(erweitert, 'Leistungsnachweis', 'Leistungsnachweise')} erweitert.`;
-  return `${anzahl(neu, 'Leistungsnachweis', 'Leistungsnachweise')} angelegt${erweitert ? `, ${erweitert} erweitert` : ''}.`;
 }
 
 export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => void; onImport: () => void }) {
@@ -102,7 +92,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                   <th>Projekt</th>
                   <th>Bearbeiter</th>
                   <th className="ln-stunden">Stunden</th>
-                  <th className="col-optional">Raster</th>
+                  <th className="col-optional ln-spalte-weit">Raster</th>
                   <th className="actions" />
                 </tr>
               </thead>
@@ -132,7 +122,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                         {bearbeiter.length ? bearbeiter.join(', ') : <span className="tertiary">noch keine Leistungen</span>}
                       </td>
                       <td className="ln-stunden">{stundenText(summeStunden(zeilen))}</td>
-                      <td className="col-optional">
+                      <td className="col-optional ln-spalte-weit">
                         <RasterBadge raster={n.raster} />
                       </td>
                       {/* Auf dem Telefon öffnet die ganze Karte den Nachweis */}
@@ -236,7 +226,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                 <tr>
                   <th>Projekt</th>
                   <th>Raster</th>
-                  <th className="col-optional">Leistungsbereich</th>
+                  <th className="col-optional ln-spalte-weit">Leistungsbereich</th>
                   <th className="zahl">Stunden {monat}</th>
                   <th className="col-optional">Letzter Nachweis</th>
                   <th className="actions" />
@@ -262,7 +252,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                       <td>
                         <RasterBadge raster={projekt.raster} />
                       </td>
-                      <td className="small muted col-optional">{projekt.leistungsbereich || '–'}</td>
+                      <td className="small muted col-optional ln-spalte-weit">{projekt.leistungsbereich || '–'}</td>
                       <td className={`zahl ${stunden ? '' : 'leer'}`}>{stundenText(stunden)}</td>
                       <td className="small col-optional">
                         {letzter ? (

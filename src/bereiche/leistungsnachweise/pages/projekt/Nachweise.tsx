@@ -9,7 +9,7 @@ import { Icon } from '../../../../shared/icons';
 import { useToast } from '../../../../shared/toast';
 import { Badge, Callout, Card, CardHeader, EmptyState } from '../../../../shared/ui';
 import { NachweisDialog } from '../../components/NachweisDialog';
-import { NachweisStatusBadge, RasterBadge, anzahl } from '../../components/common';
+import { NachweisStatusBadge, RasterBadge, anzahl, nachweiseAngelegtText } from '../../components/common';
 import {
   bearbeiterVon,
   leistungenOhneNachweis,
@@ -23,7 +23,6 @@ import { RASTER_LABEL, ZEITRAUMREGEL_LABEL, type Leistungsnachweis, type Projekt
 import { langDatum, stundenText } from '../../domain/zeitraum';
 import type { Route } from '../../lib/router';
 import { useStore } from '../../store/store';
-import { nachweiseAngelegtText } from '../Uebersicht';
 import '../../components/nachweis.css';
 
 export function Nachweise({ projekt, navigate }: { projekt: Projekt; navigate: (r: Route) => void }) {
@@ -101,7 +100,7 @@ export function Nachweise({ projekt, navigate }: { projekt: Projekt; navigate: (
                   <th className="col-optional">Bearbeiter</th>
                   <th className="ln-stunden">Stunden</th>
                   <th>Status</th>
-                  <th className="actions" />
+                  <th className="actions ln-spalte-weit" />
                 </tr>
               </thead>
               <tbody>
@@ -134,7 +133,7 @@ export function Nachweise({ projekt, navigate }: { projekt: Projekt; navigate: (
                           ) : null}
                         </span>
                       </td>
-                      <td className="actions">
+                      <td className="actions ln-spalte-weit">
                         <button
                           type="button"
                           className="btn btn-sm btn-outline"

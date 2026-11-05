@@ -31,6 +31,15 @@
 .ln-ladehinweis .callout.warn { box-shadow: inset 3px 0 0 var(--orange); }
 .ln-ladehinweis-knoepfe { gap: 6px; margin-top: 8px; }
 
+/* Mittlere Breiten: Global schneidet .table-scroll ab 861 px ab. Bis 1180 px
+   scrollen die Tabellen dieses Bereichs (Wurzel .ln-app) deshalb notfalls quer,
+   statt Spalten abzuschneiden. Nebenspalten und „Öffnen“-Knöpfe (die ganze Zeile
+   öffnet ohnehin) entfallen dort (.ln-spalte-weit). */
+@media (max-width: 1180px) {
+  .ln-app .table-scroll { overflow-x: auto; }
+  .table .ln-spalte-weit { display: none; }
+}
+
 @media (max-width: 640px) {
   .form-grid.ln-zweispaltig { grid-template-columns: minmax(0, 1fr); }
   /* Gestapelte Tabellen: Stunden links unter den übrigen Angaben, mit Einheit */

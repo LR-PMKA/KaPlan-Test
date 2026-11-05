@@ -8,14 +8,12 @@ import { today } from '../../../shared/dates';
 import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Badge, Card, EmptyState, Field, Modal, Search, Segmented, Select, TextArea, TextInput } from '../../../shared/ui';
-import { RasterBadge, STATUS_TON } from '../components/common';
+import { RASTER_OPTIONEN, REGEL_OPTIONEN, RasterBadge, STATUS_TON } from '../components/common';
 import { IMPORT_PROJEKT_VORGABEN, nummerNormal } from '../domain/import';
-import { leistungenOhneNachweis } from '../domain/nachweis';
+import { leistungenOhneNachweis, stundenVon } from '../domain/nachweis';
 import {
   LEISTUNGSBEREICH_VORSCHLAEGE,
   PROJEKT_STATUS_LABEL,
-  RASTER_KURZ,
-  ZEITRAUMREGEL_LABEL,
   type Projekt,
   type ProjektStatus,
   type Raster,
@@ -24,18 +22,10 @@ import {
 import { MONATSNAMEN, monatsanfang, monatsende, stundenText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
 import { useStore } from '../store/store';
-import { stundenVon } from './Uebersicht';
 
 const STATUS_OPTIONEN = (Object.keys(PROJEKT_STATUS_LABEL) as ProjektStatus[]).map((s) => ({
   value: s,
   label: PROJEKT_STATUS_LABEL[s],
-}));
-
-const RASTER_OPTIONEN = (['tag', 'woche', 'monat'] as Raster[]).map((r) => ({ value: r, label: RASTER_KURZ[r] }));
-
-const REGEL_OPTIONEN = (Object.keys(ZEITRAUMREGEL_LABEL) as Zeitraumregel[]).map((r) => ({
-  value: r,
-  label: ZEITRAUMREGEL_LABEL[r],
 }));
 
 export function Projekte({ navigate }: { navigate: (r: Route) => void }) {

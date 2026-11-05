@@ -9,9 +9,8 @@ import { useState } from 'react';
 import { addDays, today } from '../../../shared/dates';
 import { useToast } from '../../../shared/toast';
 import { Callout, Field, Modal, Segmented, TextInput } from '../../../shared/ui';
-import { leistungenIm, nachweisTitel, nachweiseVon, neuerNachweis, ueberschneidung } from '../domain/nachweis';
+import { leistungenIm, nachweisTitel, nachweiseVon, neuerNachweis, stundenVon, ueberschneidung } from '../domain/nachweis';
 import {
-  RASTER_KURZ,
   RASTER_LABEL,
   newId,
   projektTitel,
@@ -19,15 +18,13 @@ import {
   type Projekt,
   type Raster,
 } from '../domain/types';
-import { imZeitraum, istDatum, monatsanfang, monatsende, runden, stundenText, zeitraumText } from '../domain/zeitraum';
+import { imZeitraum, istDatum, monatsanfang, monatsende, stundenText, zeitraumText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
 import { useStore } from '../store/store';
-import { anzahl } from './common';
+import { RASTER_OPTIONEN, anzahl } from './common';
 import './nachweis.css';
 
 type Art = 'monat' | 'frei';
-
-const RASTER: Raster[] = ['tag', 'woche', 'monat'];
 
 /** Ist [von, bis] genau ein Kalendermonat? */
 const istMonat = (von: string, bis: string) => istDatum(von) && von === monatsanfang(von) && bis === monatsende(von);
@@ -86,7 +83,7 @@ export function NachweisDialog({
 
   // Was im neuen Zeitraum liegt – und was beim Verkleinern aus jedem Nachweis fiele
   const darin = gueltig ? leistungenIm(data, projekt.id, zeitraum.von, zeitraum.bis) : [];
-  const stunden = runden(darin.reduce((s, l) => s + l.stunden, 0));
+  const stunden = stundenVon(darin);
   const herausfallend =
     nachweis && gueltig
       ? data.leistungen.filter(
@@ -200,7 +197,7 @@ export function NachweisDialog({
               <Segmented<Raster>
                 value={raster}
                 onChange={setRaster}
-                options={RASTER.map((r) => ({ value: r, label: RASTER_KURZ[r] }))}
+                options={RASTER_OPTIONEN}
               />
             </Field>
             <Field label="Überschrift" full hint="Optional – leer lassen für die automatische Überschrift.">

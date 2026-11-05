@@ -15,6 +15,7 @@
 import { formatDate, today } from '../../../shared/dates';
 import { dateiLaden, spalte, xlsxErzeugen, type Blatt, type Stil, type Zelle } from '../../../shared/xlsx';
 import { GESAMT, dateiname, nachweisDateiname, nachweisFassung, spaltenStunden, type StundenSpalte } from './druck';
+import { stundenVon } from './nachweis';
 import {
   QUELLE_LABEL,
   mitarbeiterName,
@@ -24,7 +25,7 @@ import {
   type LeistungsnachweisDaten,
   type Projekt,
 } from './types';
-import { runden, stundenText } from './zeitraum';
+import { stundenText } from './zeitraum';
 
 /* ------------------------------------------------------------------ */
 /* Leistungsnachweis                                                   */
@@ -243,7 +244,7 @@ export function leistungenBlatt(daten: LeistungsnachweisDaten, projekt: Projekt,
   const sortiert = [...leistungen].sort(
     (a, b) => a.datum.localeCompare(b.datum) || name(a).localeCompare(name(b), 'de') || a.erfasst.localeCompare(b.erfasst),
   );
-  const summe = runden(sortiert.reduce((s, l) => s + l.stunden, 0));
+  const summe = stundenVon(sortiert);
   const ersteZeile = 5;
   // Alle Zellen oben ausgerichtet – der Leistungstext bricht um
   const oben = (wert: string): Zelle => ({ wert, stil: { oben: true } });

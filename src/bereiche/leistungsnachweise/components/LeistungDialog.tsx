@@ -13,18 +13,11 @@ import { useToast } from '../../../shared/toast';
 import { Callout, ConfirmDialog, Field, Modal, Select, TextArea } from '../../../shared/ui';
 import { zahlLesen } from '../domain/import';
 import { nachweiseErgaenzen, nachweisFuer, type Ergaenzung } from '../domain/nachweis';
-import {
-  mitarbeiterName,
-  type ID,
-  type ISODate,
-  type Leistung,
-  type Leistungsnachweis,
-  type LeistungsnachweisDaten,
-  type Projekt,
-} from '../domain/types';
+import type { ID, ISODate, Leistung, Leistungsnachweis, LeistungsnachweisDaten, Projekt } from '../domain/types';
 import { istDatum, langDatum, stundenText, zeitraumText } from '../domain/zeitraum';
 import { useStore } from '../store/store';
 import { MitarbeiterDialog } from './MitarbeiterDialog';
+import { mitarbeiterAuswahlText, nachNamen } from './common';
 import './leistungen.css';
 
 /** Auswahlwert, der den Dialog für einen neuen Mitarbeiter öffnet. */
@@ -118,7 +111,7 @@ export function LeistungDialog({
   // Zur Wahl stehen die aktiven Mitarbeiter – und die bisherige Person, auch wenn sie ausgeschieden ist
   const wahl = data.mitarbeiter
     .filter((m) => m.aktiv || m.id === leistung?.mitarbeiterId)
-    .sort((a, b) => a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de'));
+    .sort(nachNamen);
   const unbekannt = !!form.mitarbeiterId && !data.mitarbeiter.some((m) => m.id === form.mitarbeiterId);
   const bisherNachweis = leistung ? nachweisFuer(data, projekt.id, leistung.datum) : undefined;
 
@@ -175,10 +168,7 @@ export function LeistungDialog({
 
   const mitarbeiterOptionen = [
     ...(unbekannt ? [{ value: form.mitarbeiterId, label: '? (unbekannter Mitarbeiter)' }] : []),
-    ...wahl.map((m) => ({
-      value: m.id,
-      label: `${m.kuerzel ? `${m.kuerzel}: ` : ''}${mitarbeiterName(m) || m.kuerzel}${m.aktiv ? '' : ' (ausgeschieden)'}`,
-    })),
+    ...wahl.map((m) => ({ value: m.id, label: mitarbeiterAuswahlText(m) })),
   ];
 
   return (

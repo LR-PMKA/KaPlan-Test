@@ -11,12 +11,10 @@ import { Icon } from '../../../../shared/icons';
 import { useToast } from '../../../../shared/toast';
 import { Card, CardHeader, ConfirmDialog, Field, Modal, Segmented, Select, TextInput } from '../../../../shared/ui';
 import { LogoVerwaltung } from '../../components/Logos';
-import { anzahl } from '../../components/common';
+import { RASTER_OPTIONEN, REGEL_OPTIONEN, anzahl } from '../../components/common';
 import { abschnitteAusElementen, kennungNormal, projektelementTeilen } from '../../domain/import';
 import {
   LEISTUNGSBEREICH_VORSCHLAEGE,
-  RASTER_KURZ,
-  ZEITRAUMREGEL_LABEL,
   newId,
   type Abschnitt,
   type Projekt,
@@ -26,8 +24,6 @@ import {
 import { useStore } from '../../store/store';
 import '../../components/leistungen.css';
 
-const RASTER_OPTIONEN = (['tag', 'woche', 'monat'] as Raster[]).map((r) => ({ value: r, label: RASTER_KURZ[r] }));
-const REGEL_OPTIONEN = (Object.keys(ZEITRAUMREGEL_LABEL) as Zeitraumregel[]).map((r) => ({ value: r, label: ZEITRAUMREGEL_LABEL[r] }));
 
 export function ProjektEinstellungen({ projekt }: { projekt: Projekt }) {
   // Ändert sich das Projekt von anderer Stelle (Dialog „Bearbeiten“), beginnt das Formular neu
@@ -171,7 +167,7 @@ function Abschnitte({ projekt }: { projekt: Projekt }) {
   };
 
   return (
-    <Card>
+    <Card className="ln-kopf-knoepfe">
       <CardHeader
         titel="Abschnitte"
         sub={
