@@ -1,7 +1,7 @@
 {
   "name": "KaPlan",
   "short_name": "KaPlan",
-  "description": "KaPlan mit den Bereichen Planlaufmanagement, Baubetriebsplanung und Projektsteuerung.",
+  "description": "KaPlan mit den Bereichen Planlaufmanagement, Baubetriebsplanung, Projektsteuerung und Leistungsnachweise.",
   "lang": "de",
   "dir": "ltr",
   "start_url": "./",
