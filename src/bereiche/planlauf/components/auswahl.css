@@ -1,0 +1,169 @@
+/*
+ * Mehrfachauswahl im Reiter „Planläufe“: Kästchen-Spalte, Aktionsleiste,
+ * Anzeige paralleler Schritte und die Sammeldialoge (Schritte erledigen,
+ * Erinnern). Nur Design-Tokens aus src/shared/global.css; Präfix pll-.
+ */
+
+/* Schmale Kästchen-Spalte vor der Bezeichnung */
+.table.planlauf-tabelle th.pll-wahl,
+.table.planlauf-tabelle td.pll-wahl {
+  width: 30px;
+  padding-left: 12px;
+  padding-right: 0;
+}
+.pll-wahl input,
+.pll-kaestchen {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* Aktionsleiste über der Liste, solange etwas ausgewählt ist */
+.pll-leiste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-active);
+  border-bottom: 1px solid var(--separator);
+}
+.pll-leiste .pll-anzahl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-right: 6px;
+}
+.pll-leiste .pll-leiste-rest { flex: 1; }
+
+/* „+n parallel“ hinter dem führenden Schritt */
+.pll-parallel {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* Überschrift im Menü zur Schrittwahl (Erledigt-Haken, Erinnern bei parallelen Schritten) */
+.pll-menu-titel {
+  padding: 4px 10px 6px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.filter-menu button .pll-menu-sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+/* Sammeldialoge */
+.pll-hinweise { display: flex; flex-direction: column; gap: 6px; }
+.pll-kopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 18px;
+}
+.pll-kopf .field { margin: 0; min-width: 160px; }
+
+.pll-gruppen {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.pll-gruppe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--separator);
+}
+.pll-gruppe:last-child { border-bottom: none; }
+.pll-gruppe .pll-gruppe-name { flex: 1 1 180px; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.pll-gruppe .select { width: auto; min-width: 150px; }
+
+.pll-laeufe {
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+}
+.pll-lauf { border-bottom: 1px solid var(--separator); }
+.pll-lauf:last-child { border-bottom: none; }
+.pll-lauf-kopf {
+  padding: 7px 12px;
+  background: var(--fill-gruppe);
+  font-size: 12.5px;
+}
+.pll-schritt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 12px 8px 14px;
+  border-top: 1px solid var(--separator);
+}
+.pll-schritt:first-of-type { border-top: none; }
+.pll-schritt.pll-aus { opacity: 0.55; }
+.pll-schritt-info { flex: 1 1 200px; min-width: 0; display: flex; align-items: flex-start; gap: 9px; }
+.pll-schritt-info .pll-kaestchen { margin-top: 2px; flex: none; }
+.pll-schritt-felder { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.pll-schritt-felder .select,
+.pll-schritt-felder .input { width: auto; min-width: 130px; padding-top: 4px; padding-bottom: 4px; }
+.pll-schritt-meldungen { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 12px; padding-left: 24px; }
+
+.pll-warnung { color: var(--orange-text); font-size: 12px; }
+.pll-fehlt { color: var(--rot-text); font-size: 12px; }
+.pll-vorschau { color: var(--accent); font-size: 12px; }
+
+/* Ergebnis eines Sammelabschlusses */
+.pll-zahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.pll-zahl {
+  padding: 10px 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+}
+.pll-zahl b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.pll-zahl span { font-size: 12px; color: var(--text-secondary); }
+
+/* Sammel-Erinnern: eine Zeile je Person */
+.pll-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--separator);
+}
+.pll-person:last-child { border-bottom: none; }
+.pll-person-name { flex: 1 1 220px; min-width: 0; }
+.pll-person-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
+.pll-person details { flex-basis: 100%; font-size: 12px; }
+.pll-person details summary { cursor: pointer; color: var(--text-secondary); }
+.pll-person pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+}
+.pll-person.pll-vermerkt .pll-person-name strong { color: var(--gruen-text); }

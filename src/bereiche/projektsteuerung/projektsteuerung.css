@@ -1,0 +1,191 @@
+/*
+ * Gestaltung des Bereichs „Projektsteuerung“. Alle Klassen tragen das Präfix
+ * „ps-“, damit sie die anderen Bereiche nicht berühren. Farben, Abstände und
+ * Radien kommen aus den Design-Tokens in src/shared/global.css – so folgt
+ * auch der Farbmodus „kontrast“.
+ */
+
+/* Typen der Protokolleinträge: Information, Festlegung, Aufgabe */
+.ps-typ-I { --ps-typ: var(--accent); }
+.ps-typ-F { --ps-typ: var(--purple); }
+.ps-typ-A { --ps-typ: var(--orange); }
+
+/* Kopfzeile eines Projekts über den Reitern */
+.ps-projektkopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ps-projektkopf .ps-projektinfo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+
+/* Mitwachsende Textfelder */
+.textarea.ps-textfeld { min-height: 36px; resize: none; overflow: hidden; line-height: 1.45; padding: 7px 10px; }
+.ps-kompakt.input, .ps-kompakt.select { padding: 6px 9px; font-size: 13px; }
+.ps-kompakt.select { padding-right: 26px; }
+
+/* Werkzeugleiste über Editor und Druckansicht */
+.ps-leiste { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ps-leiste .row { flex-wrap: wrap; }
+
+/* Kopfdaten: zwölf Spalten wie im Protokoll-Tool */
+.ps-raster { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px 14px; }
+.ps-raster .s2 { grid-column: span 2; }
+.ps-raster .s3 { grid-column: span 3; }
+.ps-raster .s4 { grid-column: span 4; }
+.ps-raster .s5 { grid-column: span 5; }
+.ps-raster .s6 { grid-column: span 6; }
+.ps-raster .s8 { grid-column: span 8; }
+.ps-raster .s12 { grid-column: span 12; }
+@media (max-width: 900px) {
+  .ps-raster .s2, .ps-raster .s3 { grid-column: span 6; }
+  .ps-raster .s4, .ps-raster .s5, .ps-raster .s6, .ps-raster .s8 { grid-column: span 12; }
+}
+
+/* Teilnehmende */
+.ps-tn td { vertical-align: middle; }
+.ps-tn .ps-tn-k { width: 92px; }
+.ps-tn .ps-tn-s { width: 150px; }
+.ps-tn .ps-verknuepft { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ps-tn .ps-verknuepft strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Auf dem Telefon: Name oben, Funktion, Firma und Kürzel in einer Zeile, darunter Status und Knöpfe */
+@media (max-width: 640px) {
+  .table-stack.ps-tn tr { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+  .table-stack.ps-tn td { width: auto; }
+  .table-stack.ps-tn td:first-child { width: 100%; }
+  .table-stack.ps-tn td.actions { padding-top: 0; margin-left: auto; }
+}
+
+/* Tagesordnungspunkte */
+.ps-top-kopf {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--separator);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.ps-top-nr { font-weight: 600; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ps-top-kopf .input { font-weight: 600; background: transparent; border-color: transparent; }
+.ps-top-kopf .input:hover { border-color: var(--separator-strong); }
+.ps-top-kopf .input:focus { background: #fff; }
+.ps-top-leer { padding: 14px; color: var(--text-tertiary); font-size: 13px; }
+.ps-top-fuss { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px 14px; border-top: 1px dashed var(--separator-strong); }
+.ps-top-fuss .ps-typ-I, .ps-top-fuss .ps-typ-F, .ps-top-fuss .ps-typ-A { color: var(--ps-typ); }
+
+/* Einträge eines Protokolls */
+.ps-eintrag {
+  display: grid;
+  grid-template-columns: 44px 108px minmax(0, 1fr) 120px 144px 96px 32px;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 14px;
+  border-left: 4px solid var(--ps-typ, transparent);
+}
+.ps-eintrag + .ps-eintrag { border-top: 1px solid var(--separator); }
+.ps-eintrag.ps-gestrichen { opacity: 0.62; }
+/* Erledigt oder gestrichen – Zeile, Eintrag oder ganzer TOP: Text durchgestrichen wie im Druck */
+.ps-zeile-gestrichen .ps-orig-text,
+.ps-zeile-gestrichen > .ps-zeile-feld .textarea:not(:placeholder-shown),
+.ps-top-gestrichen .ps-top-kopf .input { text-decoration: line-through; text-decoration-color: #1846c4; }
+.ps-eintrag:not(.ps-gestrichen) .ps-zeile-gestrichen > .ps-orig,
+.ps-eintrag:not(.ps-gestrichen) .ps-zeile-gestrichen > .ps-zeile-feld { opacity: 0.62; }
+.ps-link.ps-wieder { display: inline-block; margin-top: 4px; }
+.ps-nr { font-weight: 600; padding-top: 7px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* Umschalter I / F / A */
+.ps-typwahl { display: flex; border: 1px solid var(--separator-strong); border-radius: var(--radius-sm); overflow: hidden; height: 34px; }
+.ps-typwahl button {
+  flex: 1; border: 0; background: var(--bg-elev); cursor: pointer;
+  font-weight: 700; font-size: 14px; color: var(--text-secondary);
+}
+.ps-typwahl button + button { border-left: 1px solid var(--separator-strong); }
+.ps-typwahl button:hover { background: var(--bg-hover); }
+.ps-typwahl button.aktiv { background: var(--ps-typ); color: #fff; }
+
+/* Zeilen eines Eintrags: übernommene stehen fest, die Ergänzung dieses Protokolls im Feld (im Druck blau) */
+.ps-text > .ps-zeile + .ps-zeile, .ps-text > .ps-zeile + .textarea { margin-top: 8px; }
+.ps-zeile .ps-herkunft { margin-top: 3px; }
+.ps-zeile-feld { display: flex; gap: 6px; align-items: flex-start; }
+.ps-zeile-feld .textarea { flex: 1; min-width: 0; }
+.select.ps-leer-wahl { color: var(--text-tertiary); }
+/* Ergänzung mit eigener Art: Randlinie in der Farbe ihres Typs, darunter Art, Verantwortlich, Termin */
+.ps-zeile-eigen { border-left: 3px solid var(--ps-typ); padding-left: 8px; }
+.ps-zeile-art { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }
+.ps-zeile-art .select { width: auto; min-width: 140px; max-width: 220px; }
+.ps-zeile-art .input[type='date'] { width: auto; }
+.ps-zeile-art .ps-haken { padding-top: 0; }
+.ps-typwahl.ps-typwahl-klein { height: 28px; width: 90px; flex: none; }
+.ps-typwahl.ps-typwahl-klein button { font-size: 12px; }
+
+/* Übernommene Zeile und Ergänzung (im Druck blau) */
+.ps-orig {
+  display: flex; gap: 6px; align-items: flex-start;
+  background: var(--fill-gruppe);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  padding: 6px 6px 6px 10px;
+}
+.ps-orig-text { flex: 1; white-space: pre-wrap; font-size: 13.5px; padding-top: 1px; }
+.textarea.ps-zusatz { border-style: dashed; color: #1846c4; }
+.ps-herkunft { display: block; color: var(--text-tertiary); font-size: 11.5px; margin-top: 4px; }
+.ps-link {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 11.5px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
+}
+.ps-link:hover { color: var(--accent-hover); }
+.ps-haken { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); padding-top: 8px; cursor: pointer; white-space: nowrap; }
+.ps-haken input { width: 16px; height: 16px; accent-color: var(--green); }
+.input.ps-spaet { border-color: var(--red); color: var(--red); }
+
+@media (max-width: 900px) {
+  .ps-eintrag {
+    grid-template-columns: 44px 108px minmax(0, 1fr) auto;
+    grid-template-areas: 'nr typ . weg' 'text text text text' 'wer wer termin haken';
+  }
+  .ps-eintrag > .ps-nr { grid-area: nr; }
+  .ps-eintrag > .ps-typwahl { grid-area: typ; }
+  .ps-eintrag > .ps-text { grid-area: text; }
+  .ps-eintrag > .ps-wer { grid-area: wer; }
+  .ps-eintrag > .ps-termin { grid-area: termin; }
+  .ps-eintrag > .ps-st { grid-area: haken; }
+  .ps-eintrag > .ps-weg { grid-area: weg; justify-self: end; }
+}
+@media (max-width: 640px) {
+  .ps-eintrag { grid-template-areas: 'nr typ . weg' 'text text text text' 'wer wer wer wer' 'termin termin haken haken'; }
+}
+
+/* Druckansicht in der Seite */
+.ps-blatt-huelle { overflow-x: auto; padding: 4px 2px 12px; }
+.ps-blatt {
+  background: #fff;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 44px 52px;
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+}
+@media (max-width: 700px) { .ps-blatt { padding: 24px 18px; } }
+
+/* Logos im Druckkopf */
+.ps-logo-liste { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ps-logo {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius);
+  padding: 8px 6px 8px 12px;
+  background: #fff;
+}
+.ps-logo img { max-height: 36px; max-width: 150px; display: block; }
+
+/* Auswahl aus der Projektbeteiligtenliste */
+.ps-auswahl { display: flex; flex-direction: column; border: 1px solid var(--separator); border-radius: var(--radius); max-height: 52vh; overflow-y: auto; }
+.ps-auswahl label { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; }
+.ps-auswahl label + label { border-top: 1px solid var(--separator); }
+.ps-auswahl label:hover { background: var(--bg-hover); }
+.ps-auswahl input { width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.ps-auswahl .ps-auswahl-text { min-width: 0; flex: 1; }
+
+/* Zweizeilig gekürzter Text in Tabellen */
+.ps-zweizeilig {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: pre-wrap;
+}
+
+/* Kontrastmodus: Ergänzungen kräftiger */
+:root[data-farbmodus='kontrast'] .textarea.ps-zusatz { border-width: 1.5px; }
+:root[data-farbmodus='kontrast'] .ps-typwahl button.aktiv { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35); }

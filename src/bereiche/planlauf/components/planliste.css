@@ -1,0 +1,59 @@
+/*
+ * Planliste (pages/projekt/Plaene.tsx) – Mehrfachauswahl und Sammelaktionen.
+ * Klassen mit Präfix pli-, nur Design-Tokens aus src/shared/global.css.
+ */
+
+/* Schmale Kästchen-Spalte vor der laufenden Nummer */
+.table th.pli-wahl,
+.table td.pli-wahl {
+  width: 34px;
+  padding-left: 12px;
+  padding-right: 0;
+}
+.pli-flaeche {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  cursor: pointer;
+}
+.pli-kaestchen {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.pli-kaestchen:disabled { cursor: default; opacity: 0.4; }
+/* Gewählte Zeile: Balken am Rand – die Hintergrundfarben (abgeschlossen, angekündigt) bleiben sichtbar */
+.table tr.pli-gewaehlt td.pli-wahl { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Aktionsleiste über der Liste, solange etwas gewählt ist */
+.pli-leiste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--accent-soft);
+}
+.pli-leiste .pli-anzahl {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* Löschen-Rückfrage: betroffene Einträge */
+.pli-liste {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.pli-liste li + li { margin-top: 3px; }
+.btn.btn-primary.pli-rot,
+.btn.btn-primary.pli-rot:hover { background: var(--red); }
+
+:root[data-farbmodus='kontrast'] .pli-leiste { border-bottom-color: var(--separator-strong); }
+
+@media (max-width: 640px) {
+  .pli-leiste .btn { flex: 1 1 auto; }
+}
