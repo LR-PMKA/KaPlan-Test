@@ -1,0 +1,768 @@
+/* ------------------------------------------------------------------ */
+/* Workflow-Editor (WorkflowEditor.tsx) – Klassen mit Präfix „wf-“,     */
+/* Farben aus den Design-Tokens in src/shared/global.css                */
+/* ------------------------------------------------------------------ */
+
+.wf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: var(--schleier);
+  padding: 18px;
+  display: flex;
+  animation: fade 0.15s ease;
+}
+.wf-dialog {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--bg);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Kopf ---------------------------------------------------------------- */
+.wf-kopf {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px 12px 22px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--separator);
+}
+.wf-kopf-titel { flex: 1; min-width: 0; }
+.wf-kopf-oben {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.wf-kopf-sub { font-size: 12.5px; color: var(--text-secondary); margin-top: 1px; }
+.wf-kopf-titel:not(:has(.wf-name)) .wf-kopf-oben {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--text);
+}
+.wf-name {
+  display: block;
+  width: min(520px, 100%);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 1px 6px;
+  margin-left: -7px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  outline: none;
+}
+.wf-name:hover { border-color: var(--separator); }
+.wf-name:focus { border-color: var(--accent); background: var(--bg-elev); box-shadow: 0 0 0 3px var(--accent-soft); }
+.wf-pflicht { border-color: var(--red) !important; }
+
+.wf-werkzeuge { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.wf-kennzahl { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+.wf-knopfgruppe {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  border: 1px solid var(--separator);
+}
+.wf-zu { font-size: 15px; }
+
+/* Menü „Schritt hinzufügen“ */
+.wf-menu-anker { position: relative; }
+.wf-menu-schatten { position: fixed; inset: 0; z-index: 4; }
+.wf-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  width: 290px;
+  padding: 6px;
+  background: var(--bg-elev);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.14s ease;
+}
+.wf-menu-hinweis { font-size: 11.5px; color: var(--text-tertiary); padding: 6px 10px 4px; }
+.wf-menu button {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.wf-menu button:hover { background: var(--bg-hover); }
+.wf-menu small { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-top: 1px; }
+
+/* Zeichen der Schrittart */
+.wf-typ-zeichen {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wf-typ-zeichen.entscheidung { background: var(--purple-soft); color: var(--purple); }
+
+/* Rumpf: Fläche und Details ------------------------------------------- */
+.wf-rumpf { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 372px; min-height: 0; }
+.wf-rumpf.mittel { grid-template-columns: minmax(0, 1fr); }
+.wf-schublade-schatten { position: absolute; inset: 0; z-index: 3; background: var(--schleier); }
+.wf-panel.schublade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: min(380px, 100%);
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.16s ease;
+}
+.wf-panel:focus { outline: none; }
+.wf-rumpf.schmal { grid-template-columns: minmax(0, 1fr); }
+
+.wf-flaeche {
+  position: relative;
+  overflow: auto;
+  min-height: 0;
+  padding: 22px 26px 40px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--separator-strong) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+.wf-banner {
+  font-size: 12.5px;
+  background: linear-gradient(var(--orange-soft), var(--orange-soft)), var(--bg-elev);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  margin-bottom: 14px;
+}
+.wf-leer {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: 80px auto;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.wf-leer strong { color: var(--text); font-size: 15px; }
+
+/* Raster: Standardverlauf | Zwischenraum | Abweichungen. Spalte 1 wächst mit einem
+   parallelen Block, dessen Zweige nebeneinander stehen; Karten bleiben höchstens 330 px breit. */
+.wf-raster {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(250px, max-content) minmax(110px, 140px) minmax(230px, 300px);
+  column-gap: 0;
+  align-items: stretch;
+  width: 100%;
+  min-width: min-content;
+  /* Platz für die Bahnen rechts der Abweichungen und deren Etiketten (max. 104 px) */
+  padding-right: 116px;
+}
+.wf-messleiste { pointer-events: none; }
+
+.wf-spaltenkopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding-bottom: 14px;
+}
+.wf-spaltenkopf::after { content: ''; flex: 1; max-width: 80px; height: 1px; background: var(--separator-strong); }
+.wf-spaltenkopf.abw { color: var(--orange-text); }
+.wf-spaltenkopf.weg { color: var(--text-tertiary); padding-top: 18px; }
+
+.wf-zelle { display: flex; flex-direction: column; align-items: stretch; position: relative; z-index: 1; }
+.wf-zelle.wf-start-zelle { align-items: center; }
+.wf-raster > .wf-zelle > .wf-karte { max-width: 330px; align-self: center; }
+
+/* Start- und Endknoten */
+.wf-knoten {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-elev);
+  border: 1px solid var(--separator-strong);
+  border-radius: 999px;
+  padding: 4px 12px 4px 9px;
+}
+.wf-knoten.wf-ende { color: var(--text); }
+
+/* Verbinder im Standardverlauf */
+.wf-verbinder {
+  position: relative;
+  flex: 1;
+  min-height: 46px;
+  display: flex;
+  justify-content: center;
+}
+.wf-verbinder .wf-linie {
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--separator-strong);
+}
+.wf-verbinder .wf-pfeil {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top: 7px solid var(--separator-strong);
+  border-bottom: 0;
+}
+.wf-verbinder .wf-antwort.standard {
+  position: absolute;
+  top: 9px;
+  left: calc(50% + 10px);
+}
+.wf-einfuegen {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -14px 0 0 -11px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--separator-strong);
+  background: var(--bg-elev);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.wf-verbinder:hover .wf-einfuegen,
+.wf-einfuegen:focus-visible { opacity: 1; transform: none; }
+.wf-einfuegen:hover { background: var(--accent); border-color: var(--accent); color: var(--bg-elev); }
+@media (hover: none) {
+  .wf-einfuegen { opacity: 0.85; transform: none; }
+}
+
+/* Antwort-Beschriftungen */
+.wf-antwort {
+  position: absolute;
+  z-index: 2;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  max-width: 104px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--separator-strong);
+  color: var(--text-secondary);
+}
+.wf-antwort.standard { color: var(--accent); border-color: var(--accent-soft); background: var(--bg-elev); }
+.wf-antwort.abw { color: var(--orange-text); border-color: var(--orange); }
+.wf-antwort.rueck { color: var(--purple); border-color: var(--purple); }
+.wf-antwort.aktiv { box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* Karten -------------------------------------------------------------- */
+.wf-karte {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+.wf-karte:hover { border-color: var(--separator-strong); box-shadow: var(--shadow); }
+.wf-karte.hervor { border-color: var(--separator-strong); }
+.wf-karte.aktiv { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
+.wf-karte.fehlt { border-color: var(--red); border-style: dashed; }
+.wf-karte:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wf-karte.abweichung::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--orange-soft);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.wf-karte.abweichung { border-color: var(--orange-soft); }
+.wf-karte.abweichung.aktiv { border-color: var(--accent); }
+.wf-karte.unerreichbar { border-style: dashed; opacity: 0.8; }
+.wf-karte > * { position: relative; }
+
+.wf-karte-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wf-typ {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.wf-typ.entscheidung { color: var(--purple); }
+.wf-nr { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+.wf-karte-titel { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; color: var(--text); }
+.wf-karte-titel.leer { color: var(--rot-text); font-weight: 500; font-style: italic; }
+.wf-karte-fuss {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.wf-rolle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.wf-kuerzel {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--gray-soft);
+  color: var(--text-secondary);
+}
+.wf-frist { flex: none; display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.wf-merkmale { display: flex; flex-wrap: wrap; gap: 5px; }
+.wf-merkmal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wf-zweige { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--separator); padding-top: 6px; }
+.wf-zweig { font-size: 11.5px; color: var(--orange-text); }
+.wf-zweig.rueck { color: var(--purple); }
+.wf-zweig b { font-weight: 600; }
+
+/* Abweichungen */
+.wf-stapel { display: flex; flex-direction: column; gap: 28px; position: relative; z-index: 1; padding-bottom: 46px; }
+.wf-abw-leer {
+  align-self: start;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--separator-strong);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--bg-elev);
+}
+.wf-weg { position: relative; z-index: 1; }
+.wf-weg-karten { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+
+/* Linien */
+.wf-linien { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; z-index: 0; }
+.wf-kante-linie { fill: none; stroke-width: 1.6; stroke-dasharray: 5 4; }
+.wf-kante.abw .wf-kante-linie { stroke: var(--orange); }
+.wf-kante.abw .wf-kante-spitze { fill: var(--orange); }
+.wf-kante.rueck .wf-kante-linie { stroke: var(--purple); }
+.wf-kante.rueck .wf-kante-spitze { fill: var(--purple); }
+.wf-kante.hervor .wf-kante-linie { stroke-width: 2.2; }
+.wf-kante.aktiv .wf-kante-linie { stroke-width: 2.4; stroke-dasharray: none; }
+
+/* Schmal: untereinander */
+.wf-schmal { display: flex; flex-direction: column; max-width: 520px; margin: 0 auto; }
+.wf-schmal .wf-stapel { padding-bottom: 8px; }
+.wf-schmal .wf-spaltenkopf.abw,
+.wf-schmal .wf-spaltenkopf.weg { padding-top: 26px; }
+
+/* Details ------------------------------------------------------------- */
+.wf-panel {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--separator);
+}
+.wf-details { display: flex; flex-direction: column; gap: 16px; padding: 0 18px 22px; }
+.wf-panel-kopf {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 -18px;
+  padding: 12px 12px 12px 18px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--separator);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.wf-panel-nav { display: inline-flex; align-items: center; gap: 2px; font-weight: 500; font-size: 12px; }
+.wf-panel-titel { display: flex; align-items: center; gap: 11px; }
+.wf-panel-titel strong { font-size: 14.5px; }
+
+.wf-felder { display: flex; flex-direction: column; gap: 12px; }
+.wf-feld { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.wf-feld > span:first-child { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.wf-feld-reihe { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
+.wf-mit-einheit { position: relative; display: block; }
+.wf-mit-einheit .input { padding-right: 44px; }
+.wf-mit-einheit span {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.wf-art { width: 100%; }
+.wf-art button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.wf-hilfe { font-size: 11.5px; color: var(--text-tertiary); line-height: 1.45; }
+
+.wf-abschnitt {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 14px;
+  border-top: 1px solid var(--separator);
+}
+.wf-abschnitt h4 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; margin: 0; }
+
+.wf-antworten { display: flex; flex-direction: column; gap: 8px; }
+.wf-antwort-karte {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--separator);
+  background: var(--bg-subtle);
+}
+.wf-antwort-karte.standard { border-color: var(--accent-soft); background: var(--bg-elev); box-shadow: var(--shadow-sm); }
+.wf-antwort-zeile { display: flex; align-items: center; gap: 7px; }
+.wf-punkt { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+.wf-antwort-karte.standard .wf-punkt { background: var(--accent); }
+.wf-weiter { display: flex; flex-direction: column; gap: 4px; padding-left: 15px; }
+.wf-weiter > span { font-size: 11.5px; color: var(--text-tertiary); }
+.wf-standard-marke {
+  align-self: flex-start;
+  margin-left: 15px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.wf-als-standard { align-self: flex-start; margin-left: 9px; }
+
+.wf-aktionen { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.wf-position { display: inline-flex; align-items: center; gap: 2px; }
+.wf-position .small { margin-right: 4px; }
+
+/* Übersicht */
+.wf-kacheln { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wf-kacheln > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--fill-gruppe);
+}
+.wf-kacheln b { font-size: 20px; letter-spacing: -0.02em; }
+.wf-kacheln span { font-size: 11.5px; color: var(--text-secondary); line-height: 1.3; }
+.wf-hinweise { display: flex; flex-direction: column; gap: 5px; }
+.wf-hinweis {
+  text-align: left;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  background: var(--orange-soft);
+  cursor: pointer;
+}
+.wf-hinweis.sperrt { background: var(--red-soft); }
+.wf-hinweis:disabled { cursor: default; }
+.wf-legende, .wf-tipps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.wf-tipps li { padding-left: 14px; position: relative; }
+.wf-tipps li::before { content: '•'; position: absolute; left: 2px; color: var(--text-tertiary); }
+.wf-legende li { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: start; }
+.wf-legende b { color: var(--text); font-weight: 600; }
+.wf-legende-linie { margin-top: 8px; height: 0; border-top: 2px solid var(--separator-strong); }
+.wf-legende-linie.abw { border-top: 2px dashed var(--orange); }
+.wf-legende-linie.rueck { border-top: 2px dashed var(--purple); }
+.wf-legende-linie.wf-parallel-legende { height: 9px; margin-top: 4px; border-top: 3px solid var(--green); border-bottom: 3px solid var(--green); }
+
+/* Fuß ----------------------------------------------------------------- */
+.wf-fuss {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--separator);
+}
+.wf-fuss-info { display: flex; align-items: center; gap: 12px; font-size: 12px; min-width: 0; flex-wrap: wrap; }
+.wf-hinweis-knopf {
+  border: none;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--orange-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+.wf-hinweis-knopf.sperrt { background: var(--red-soft); }
+.wf-ok { display: inline-flex; align-items: center; gap: 5px; color: var(--gruen-text); font-weight: 600; }
+
+/* Ablauf-Vorschau (AblaufVorschau.tsx) -------------------------------- */
+.wf-vorschau { display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+.wf-vorschau-knoten {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.wf-vorschau-knoten.entscheidung { border-radius: 2px; transform: rotate(45deg) scale(0.9); background: var(--purple); }
+.wf-vorschau-strich { flex: none; width: 10px; height: 2px; background: var(--separator-strong); }
+.wf-vorschau-ende { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--separator-strong); }
+.wf-parallel-vorschau {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border-left: 2px solid var(--green);
+  border-right: 2px solid var(--green);
+  border-radius: 2px;
+}
+.wf-parallel-vorschau-zweig { display: flex; align-items: center; }
+.wf-parallel-vorschau .wf-vorschau-knoten { width: 7px; height: 7px; }
+.wf-parallel-vorschau .wf-vorschau-strich { width: 6px; }
+.wf-vorschau-zusatz { margin-left: 10px; font-size: 11.5px; color: var(--orange-text); white-space: nowrap; }
+
+/* Lauf-Schritte im Eintrags- und Neustart-Dialog */
+.wf-lauf {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--separator);
+  background: var(--bg-subtle);
+}
+.wf-lauf-kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wf-lauf-kopf strong { font-size: 14px; }
+
+/* Workflow-Liste (Workflows.tsx) -------------------------------------- */
+.wf-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 14px; }
+.wf-liste-karte {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--bg-elev);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid transparent;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.wf-liste-karte:hover { border-color: var(--separator-strong); }
+.wf-liste-karte:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
+.wf-liste-kopf { display: flex; align-items: flex-start; gap: 10px; }
+.wf-liste-kopf strong { font-size: 15px; letter-spacing: -0.01em; }
+.wf-liste-text { font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+.wf-liste-zahlen { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); }
+.wf-liste-zahlen b { color: var(--text); font-variant-numeric: tabular-nums; }
+.wf-liste-fuss { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--separator); padding-top: 10px; }
+
+/* Parallele Blöcke: Containerkarte im Ablaufbild ---------------------- */
+.wf-parallel-zeichen { font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--gruen-text); }
+.wf-typ-zeichen.wf-parallel-typ { background: var(--green-soft); color: var(--gruen-text); font-size: 15px; }
+.wf-menu button:disabled { opacity: 0.55; cursor: not-allowed; }
+.wf-parallel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border: 1px solid var(--green);
+  border-radius: var(--radius-xl);
+  background: var(--bg-subtle);
+  box-shadow: var(--shadow-sm);
+}
+.wf-raster > .wf-zelle > .wf-parallel { align-self: center; }
+.wf-parallel-gestapelt { width: 100%; }
+.wf-raster > .wf-zelle > .wf-parallel-gestapelt { max-width: 360px; }
+.wf-parallel-aktiv { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm); }
+.wf-parallel-abweichung { border-style: dashed; border-color: var(--orange); }
+.wf-parallel-unerreichbar { border-style: dashed; border-color: var(--separator-strong); opacity: 0.85; }
+.wf-parallel-kopf {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 0 2px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gruen-text);
+}
+.wf-parallel-kopf-text { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-tertiary); }
+/* Der Kopf ist eine Schaltfläche: wählt den ersten Schritt des Blocks und öffnet „Name des Blocks“ */
+button.wf-parallel-kopf {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.wf-parallel-kopf:hover .wf-parallel-titel { text-decoration: underline; text-underline-offset: 2px; }
+.wf-parallel-titel { min-width: 0; overflow-wrap: anywhere; }
+.wf-parallel-namen { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; margin-bottom: 10px; }
+/* Gabel- und Zusammenführungsbalken: nebeneinander von Zweigmitte zu Zweigmitte */
+.wf-parallel-balken { height: 3px; border-radius: 2px; background: var(--green); }
+.wf-parallel-nebeneinander .wf-parallel-balken { margin: 0 120px; }
+.wf-parallel-zweige { display: flex; flex-direction: column; gap: 14px; padding: 12px 0; }
+.wf-parallel-nebeneinander .wf-parallel-zweige {
+  display: grid;
+  grid-template-columns: repeat(var(--wf-parallel-n, 2), 240px);
+  gap: 12px;
+  padding: 0;
+}
+.wf-parallel-zweig { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.wf-parallel-gestapelt .wf-parallel-zweig { padding: 2px 0 4px 10px; border-left: 3px solid var(--green); }
+.wf-parallel-zweig-kopf {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.wf-parallel-zweig-kopf { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Nebeneinander links neben dem „+“ in der Zweigmitte */
+.wf-parallel-nebeneinander .wf-parallel-zweig-kopf { position: absolute; top: 8px; left: 2px; max-width: calc(50% - 18px); }
+.wf-parallel-zweig .wf-verbinder { flex: none; min-height: 40px; }
+.wf-parallel-zweig .wf-verbinder.wf-parallel-anfang { min-height: 34px; }
+.wf-parallel-zweig .wf-karte { width: 100%; }
+.wf-parallel-schluss { font-size: 11.5px; padding: 3px 10px 3px 8px; max-width: 100%; }
+.wf-parallel-schluss.ausstieg { color: var(--orange-text); border-color: var(--orange); }
+.wf-parallel-schluss.rueck { color: var(--purple); border-color: var(--purple); }
+.wf-parallel-rest { position: relative; flex: 1; min-height: 12px; }
+.wf-parallel-gestapelt .wf-parallel-rest { display: none; }
+.wf-parallel-nebeneinander .wf-parallel-rest.mit-linie::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--separator-strong);
+}
+.wf-parallel-abw {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 10px;
+  padding: 8px;
+  border: 1px dashed var(--orange);
+  border-radius: var(--radius-lg);
+}
+.wf-parallel-abw.wf-parallel-weg { border-color: var(--separator-strong); }
+.wf-parallel-abw-kopf { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--orange-text); }
+.wf-parallel-weg .wf-parallel-abw-kopf { color: var(--text-tertiary); }
+.wf-karte.wf-parallel-gestrichelt { border-style: dashed; border-color: var(--orange); }
+.wf-karte.wf-parallel-gestrichelt.aktiv { border-color: var(--accent); }
+.wf-karte.wf-parallel-gestrichelt.fehlt { border-color: var(--red); }
+.wf-parallel-fuss { padding-top: 6px; text-align: center; font-size: 11.5px; color: var(--text-secondary); }
+.wf-zweig.wf-parallel-unzulaessig { color: var(--rot-text); }
+.wf-parallel-nacharbeit { font-size: 12px; color: var(--text-secondary); }
+
+/* Kontrastmodus ------------------------------------------------------- */
+:root[data-farbmodus='kontrast'] .wf-karte { border-color: var(--separator-strong); }
+:root[data-farbmodus='kontrast'] .wf-karte.abweichung { border-color: var(--orange); }
+:root[data-farbmodus='kontrast'] .wf-karte.aktiv { border-color: var(--accent); border-width: 2px; }
+:root[data-farbmodus='kontrast'] .wf-kante-linie { stroke-width: 2; }
+:root[data-farbmodus='kontrast'] .wf-antwort { font-weight: 700; }
+:root[data-farbmodus='kontrast'] .wf-parallel { border-width: 2px; }
+:root[data-farbmodus='kontrast'] .wf-parallel-balken { background: var(--gruen-text); }
+:root[data-farbmodus='kontrast'] .wf-karte.wf-parallel-gestrichelt { border-color: var(--orange-text); }
+:root[data-farbmodus='kontrast'] .wf-parallel-gestapelt .wf-parallel-zweig { border-left-color: var(--gruen-text); }
+
+/* Schmale Bildschirme ------------------------------------------------- */
+@media (max-width: 820px) {
+  .wf-overlay { padding: 0; }
+  .wf-dialog { border-radius: 0; }
+  .wf-kopf { padding: 10px 12px 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .wf-kopf-titel { flex-basis: 100%; padding-right: 36px; }
+  .wf-kennzahl { display: none; }
+  .wf-werkzeuge { flex: 1; justify-content: flex-start; }
+  .wf-zu { position: absolute; top: 8px; right: 8px; }
+  .wf-dialog { position: relative; }
+  .wf-flaeche { padding: 16px 14px 32px; }
+  .wf-menu { right: 0; left: auto; width: min(290px, calc(100vw - 24px)); }
+
+  .wf-blatt-schatten { position: fixed; inset: 0; z-index: 3; background: var(--schleier); }
+  .wf-panel.blatt {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    max-height: 78vh;
+    border-left: none;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    box-shadow: var(--shadow-lg);
+    animation: pop 0.18s ease;
+  }
+  .wf-fuss { flex-wrap: wrap; }
+  .wf-fuss-info { flex-basis: 100%; }
+  .wf-fuss .btn { flex: 1; }
+}

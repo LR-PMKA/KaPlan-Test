@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KaPlan</title>
+    <meta name="description" content="KaPlan – Planlaufmanagement, Baubetriebsplanung und Projektsteuerung" />
+    <meta name="theme-color" content="#f5f5f7" />
+    <meta name="color-scheme" content="light" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=3" />
+    <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png?v=3" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=3" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="KaPlan" />
+  </head>
+  <body>
+    <div id="root">
+      <!--
+        Dieser Bereich ist nur sichtbar, solange die Anwendung nicht gestartet
+        ist – React ersetzt den Inhalt von #root beim Laden.
+
+        Wird die Seite statisch ausgeliefert (GitHub Pages mit der Quelle
+        "Deploy from a branch" liefert den Quellcode statt des Builds), startet
+        die Anwendung nicht. Das Skript unten wechselt dann automatisch zur
+        gebauten Fassung im Unterverzeichnis ./app/. Dieser Build ist eingecheckt
+        und wird vom Workflow nach jedem Push auf main erneuert (siehe README,
+        Abschnitt „Veröffentlichen“). Fehlt er, bleibt der Hinweis stehen.
+      -->
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 40rem; margin: 12vh auto; padding: 0 1.5rem; color: #1d1d1f; line-height: 1.5;">
+        <h1 style="font-size: 1.3rem; margin: 0 0 .75rem;">KaPlan wird geladen …</h1>
+        <p style="margin: 0 0 1rem; color: #6e6e73;">
+          Falls diese Meldung stehen bleibt, fehlt die gebaute Anwendung im Ordner
+          <strong>app/</strong>. Sie entsteht mit <code style="background: #f5f5f7; padding: .1rem .35rem; border-radius: 4px;">npm run build</code>
+          und wird aus <code style="background: #f5f5f7; padding: .1rem .35rem; border-radius: 4px;">dist/</code> nach
+          <code style="background: #f5f5f7; padding: .1rem .35rem; border-radius: 4px;">app/</code> übernommen.
+        </p>
+        <p style="margin: 0; color: #6e6e73;">
+          Lokal wird die Anwendung mit <code style="background: #f5f5f7; padding: .1rem .35rem; border-radius: 4px;">npm run dev</code>
+          gestartet oder mit <code style="background: #f5f5f7; padding: .1rem .35rem; border-radius: 4px;">npm run build</code> gebaut.
+        </p>
+      </div>
+    </div>
+    <script>
+      /*
+        Notausgang für statisch ausgelieferten Quellcode: Startet die Anwendung
+        nicht innerhalb von 1,5 Sekunden, wird auf die gebaute Fassung unter
+        ./app/ gewechselt. Im Entwicklungsbetrieb meldet sich die Anwendung über
+        window.planlaufGestartet und der Wechsel entfällt. Im fertigen Build
+        entfällt er immer – dort gibt es kein app/, und ein langsam geladenes
+        Programm darf nicht auf eine fehlende Seite umleiten.
+      */
+      (function () {
+        if (/\/app\/?$/.test(location.pathname)) return;
+        var zeitgeber = setTimeout(function () {
+          // Nur der unverarbeitete Quellcode lädt /src/main.tsx; im Build ersetzt
+          // Vite dieses Tag. Geprüft wird erst hier, weil es beim Start des
+          // Zeitgebers noch nicht eingelesen ist.
+          if (!document.querySelector('script[src$="/src/main.tsx"]')) return;
+          location.replace('app/' + location.hash);
+        }, 1500);
+        window.planlaufGestartet = function () {
+          clearTimeout(zeitgeber);
+        };
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

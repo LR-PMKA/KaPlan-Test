@@ -1,0 +1,221 @@
+/* Abgleich mit einer Sicherung und Hinweisleisten – Präfix ab-, nur Design-Tokens. */
+
+/* Breites Modal (schließt nicht per Hintergrundklick) */
+.modal.ab-modal {
+  width: min(1100px, 100%);
+}
+.ab-modal .modal-body {
+  padding-top: 14px;
+}
+
+/* Wahl nach dem Lesen der Sicherung */
+.ab-wahl-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ab-wahl-option {
+  padding: 11px 14px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ab-wahl-option strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Kopfzeile des Abgleichs */
+.ab-kopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 14px;
+}
+.ab-zahl {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* Abschnitte und Gruppen */
+.ab-abschnitt {
+  margin-bottom: 18px;
+}
+.ab-abschnitt-titel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.ab-projekt {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+  padding: 4px 12px 10px;
+  margin-bottom: 14px;
+  background: var(--bg-elev);
+}
+.ab-projekt > .callout {
+  margin: 6px 0 8px;
+}
+.ab-gruppe {
+  margin-top: 8px;
+}
+.ab-gruppe-kopf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--separator);
+}
+.ab-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Zeilen */
+.ab-zeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 10px;
+  padding: 7px 0 7px 2px;
+  border-bottom: 1px solid var(--separator);
+}
+.ab-zeile:last-child {
+  border-bottom: none;
+}
+.ab-projekt-kopf > .ab-zeile {
+  border-bottom: none;
+  font-weight: 600;
+}
+.ab-wahl {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ab-wahl input {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  flex: none;
+  accent-color: var(--accent);
+}
+.ab-wahl input:disabled {
+  cursor: default;
+}
+.ab-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ab-zusatz {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.ab-kennzeichen {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ab-details {
+  flex: 1 1 100%;
+  padding-left: 23px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.ab-details > div + div {
+  margin-top: 2px;
+}
+.ab-unterschiede {
+  color: var(--text);
+}
+.ab-hinweis {
+  color: var(--orange-text);
+}
+.ab-optionen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 4px;
+  color: var(--text);
+}
+.ab-optionen input {
+  accent-color: var(--accent);
+}
+.ab-kopie-hinweis {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding: 6px 0 2px;
+}
+
+.ab-fehler {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+/* Hinweisleisten über dem Inhalt */
+.ab-leisten {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--bg-elev);
+}
+.ab-leiste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.ab-leiste.fehler {
+  background: var(--red-soft);
+  border-left: 3px solid var(--red);
+}
+.ab-leiste.warnung {
+  background: var(--orange-soft);
+  border-left: 3px solid var(--orange);
+}
+.ab-leiste.info {
+  border-left: 3px solid var(--accent);
+}
+.ab-leiste-text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.ab-leiste-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .ab-leisten {
+    padding: 8px 14px;
+  }
+  .ab-projekt {
+    padding: 4px 8px 8px;
+  }
+  .ab-details {
+    padding-left: 0;
+  }
+}
