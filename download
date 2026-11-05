@@ -1,0 +1,11 @@
+# Abhängigkeiten
+node_modules/
+
+# Build-Ergebnisse (der Pages-Workflow legt den Build unter app/ ab)
+dist/
+
+# Zwischenstände von TypeScript
+tsconfig.tsbuildinfo
+
+# Betriebssystem und Editor
+.DS_Store

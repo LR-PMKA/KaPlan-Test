@@ -1,0 +1,129 @@
+# Baut MC Plan und veröffentlicht den Build.
+#
+# Bei jedem Push auf main:
+#   1. Typprüfung und Produktionsbuild (dist/)
+#   2. Bereitstellung über GitHub Pages
+#      (Settings → Pages → Source: „GitHub Actions“)
+#   3. Ablage desselben Builds im Branch gh-pages und im Ordner app/ auf main –
+#      für den Fall, dass Pages auf „Deploy from a branch“ steht (siehe README).
+#
+# Bei Pull Requests (und manuellen Läufen auf anderen Branches) läuft nur
+# Schritt 1 als Prüfung.
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Veröffentlichungen nacheinander abarbeiten, Prüfungen je Pull Request bündeln.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Prüfen und bauen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Der Build (tsc -b && vite build) enthält die Typprüfung.
+      - run: npm run build
+
+      - name: Build für GitHub Pages bereitstellen
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Build für die Ablage in den Branches bereitstellen
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+
+  pages:
+    name: GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Auch bei „Deploy from a branch“ nimmt GitHub die Bereitstellung an; der
+    # Branch-Build von GitHub überschreibt sie dann, sobald er fertig ist.
+    # continue-on-error fängt ab, dass Pages nicht aktiviert ist oder die
+    # Bereitstellung aus anderen Gründen scheitert – die Ablage in gh-pages und
+    # app/ läuft davon unabhängig.
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  ablage:
+    name: Ablage in gh-pages und app/
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      BOT_NAME: github-actions[bot]
+      BOT_MAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+
+      - name: Build im Branch gh-pages ablegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          # Eigener, frischer Stand ohne Verlauf – der Branch enthält nur den Build.
+          ziel="$RUNNER_TEMP/gh-pages"
+          cp -r "$DIST" "$ziel"
+          cd "$ziel"
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="$BOT_NAME" -c user.email="$BOT_MAIL" commit -q -m "Build von ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Build unter app/ ablegen
+        env:
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          rm -rf app
+          cp -r "$DIST" app
+          git add -A app
+          if git diff --cached --quiet; then
+            echo "app/ ist bereits aktuell."
+            exit 0
+          fi
+          git -c user.name="$BOT_NAME" -c user.email="$BOT_MAIL" commit -q -m "app/: Build von ${GITHUB_SHA::7} [skip ci]"
+          # Ist main inzwischen weiter, übernimmt der nächste Lauf die Ablage.
+          if ! git push -q origin "HEAD:${GITHUB_REF_NAME}"; then
+            echo "::warning::app/ konnte nicht nach ${GITHUB_REF_NAME} geschrieben werden (Branch weitergelaufen oder geschützt)."
+          fi
