@@ -36,6 +36,9 @@
 .ln-le-zu { display: block; font-size: 11.5px; color: var(--text-tertiary); }
 .ln-le-ohne { color: var(--orange-text); font-size: 12.5px; }
 .table.ln-le-tabelle tr.ln-le-gewaehlt td { background: var(--accent-soft); }
+/* Leistungen anderer (Controlling, „Alle“): nur zum Lesen */
+.table.ln-le-tabelle tr.ln-le-fremd td { color: var(--text-secondary); }
+.ln-le-nurlesen { font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap; padding: 0 4px; }
 
 /* Leiste, solange Zeilen ausgewählt sind */
 .ln-le-auswahl {
@@ -88,10 +91,24 @@
 /* Überschrift eines Abschnitts der Vorschau */
 .ln-imp-titel { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-tertiary); margin-bottom: 6px; }
 
-/* Mitarbeiter der Datei */
+/* Wessen Leistungen übernommen werden; mit der Rolle Controlling der Haken „Sammel-Export …“ */
+.ln-imp-wer {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: 13px; color: var(--text-secondary);
+}
+.ln-imp-wer .ln-imp-sammel { color: var(--text); font-weight: 500; }
+
+/* Mitarbeiter der Datei – mit Hinweis bei einem Kürzel, das zu einer anderen Person gehört */
 .ln-imp-personen { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
-.ln-imp-personen li { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.ln-imp-personen li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ln-imp-person { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .ln-imp-personen .mono { font-size: 12px; color: var(--text-secondary); }
+.ln-imp-personen li.ln-imp-fremd strong { font-weight: 500; color: var(--text-secondary); }
+.ln-imp-hinweis { font-size: 12px; color: var(--orange-text); max-width: 460px; }
 
 /* Projekte der Datei: bei vielen Projekten scrollt die Liste */
 .ln-imp-liste { max-height: 340px; overflow-y: auto; }
@@ -101,6 +118,8 @@
 .table.ln-imp-tabelle tr.ln-imp-aus td { color: var(--text-tertiary); }
 .table.ln-imp-tabelle tr.ln-imp-aus .badge { opacity: 0.6; }
 .ln-imp-anlegen { margin-top: 6px; font-size: 12.5px; }
+/* Abschnitte, die der Import aus Spalte J anlegt */
+.ln-imp-abschnitte { margin-top: 4px; font-size: 12px; color: var(--accent); white-space: normal; }
 .ln-imp-ergebnis { display: flex; flex-wrap: wrap; gap: 4px; }
 .ln-imp-warnung { display: block; margin-top: 4px; font-size: 12px; color: var(--orange-text); }
 .ln-imp-nachweise { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
@@ -183,13 +202,13 @@
   .table-stack.ln-le-tabelle td.ln-le-haken { width: auto; padding-right: 0; }
   .table-stack.ln-le-tabelle td.ln-le-person { flex: 1 1 auto; min-width: 0; }
   .table-stack.ln-le-tabelle td.ln-le-text { order: 1; flex-basis: 100%; min-width: 0; }
-  .table-stack.ln-le-tabelle td.ln-le-abschnitt,
   .table-stack.ln-le-tabelle td.ln-le-nachweis { order: 2; }
   /* Löschen am Ende der Zeile mit dem Nachweis */
   .table-stack.ln-le-tabelle td.actions { order: 3; margin-left: auto; padding-top: 0; }
 
-  /* Karten mit mehreren Knöpfen im Kopf (Abschnitte, Logos): Knöpfe brechen um, statt abgeschnitten zu werden */
-  .card.ln-kopf-knoepfe > .card-header > .row { flex-wrap: wrap; }
+  /* Karten mit mehreren Knöpfen im Kopf (Abschnitte, Logos): Knöpfe brechen um, statt abgeschnitten zu werden –
+     auch wenn der Kopf in fieldset.ln-fieldset steht */
+  .card.ln-kopf-knoepfe .card-header > .row { flex-wrap: wrap; }
 
   .ln-imp-zahlen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ln-imp-liste { max-height: none; }

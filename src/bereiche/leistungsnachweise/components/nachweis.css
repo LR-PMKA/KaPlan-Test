@@ -45,7 +45,12 @@
 .ln-zeile-abschnitte { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
 .ln-zeile-abschnitte > span { display: flex; justify-content: space-between; gap: 10px; }
 .ln-zeile-abschnitte b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-.ln-zeile-fuss { border-top: 1px solid var(--separator); padding: 4px 12px; }
+.ln-zeile-fuss {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px 12px;
+  border-top: 1px solid var(--separator); padding: 4px 12px;
+}
+/* „Keine eigenen Leistungen“ und „+ 3 Leistungen von Kolleginnen und Kollegen“ – nur die Zahl, keine Stunden */
+.ln-zeile-keine, .ln-zeile-andere { font-size: 12.5px; color: var(--text-tertiary); padding: 4px 6px; }
 .ln-zeile-aufklappen {
   display: inline-flex; align-items: center; gap: 6px;
   border: none; background: none; cursor: pointer;
@@ -64,30 +69,14 @@
 .ln-summe-abschnitte b { color: var(--text); font-variant-numeric: tabular-nums; }
 .ln-summe-wert { margin-left: auto; font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* Stunden je Mitarbeiter */
-.ln-mitarbeiterstunden td.ln-null { color: var(--text-tertiary); font-weight: 400; }
-.ln-mitarbeiterstunden tr.ln-mitarbeiterstunden-summe td { font-weight: 600; border-top: 1px solid var(--separator-strong); }
-
-/* Druckansicht in der Seite – auf dem Telefon quer verschiebbar statt gestaucht */
-.ln-blatt-huelle { overflow-x: auto; padding: 4px 2px 12px; }
-.ln-blatt {
-  background: #fff;
-  max-width: 860px;
-  min-width: 560px;
-  margin: 0 auto;
-  padding: 44px 52px;
-  border-radius: 4px;
-  box-shadow: var(--shadow);
-}
+/* Hinweis zur gemeinsamen Bearbeitung unter dem Kopf */
+.ln-gemeinsam { margin: 0; }
 
 @media (max-width: 900px) {
   .ln-zeile-raster {
     grid-template-columns: 128px minmax(0, 1fr) auto;
     grid-template-areas: 'datum bearbeiter stunden' 'text text text';
   }
-}
-@media (max-width: 700px) {
-  .ln-blatt { padding: 24px 18px; }
 }
 @media (max-width: 640px) {
   .ln-zeile-raster {
@@ -105,10 +94,6 @@
   .ln-zeile-leistungen .table-stack td.ln-zeile-leistungstext { order: 1; flex-basis: 100%; }
   .ln-zeile-leistungen .table-stack td.ln-stunden { order: 2; }
   .ln-zeile-leistungen .table-stack td.actions { order: 3; margin-left: auto; padding-top: 0; flex: none; }
-  /* Stunden je Mitarbeiter: so breit wie nötig – ohne Abschnitte passen die drei Spalten
-     ohne Querscrollen, mit vielen Abschnitten scrollt die Tabelle weiterhin quer */
-  .table-scroll > .table.ln-mitarbeiterstunden:not(.table-stack) { min-width: 0; }
-  .table.ln-mitarbeiterstunden th, .table.ln-mitarbeiterstunden td { padding-left: 8px; padding-right: 8px; }
 }
 
 /* Kontrastmodus: Randlinie bearbeiteter Zeilen kräftiger */

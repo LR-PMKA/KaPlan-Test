@@ -120,7 +120,7 @@ export function SicherungEinspielenDialog({
 
   const einspielen = () => {
     if (neuereFassung) return;
-    // „Ich erfasse als“ gilt nur, wenn die Person auch in der Sicherung vorkommt
+    // Die Anmeldung bleibt nur, wenn die angemeldete Person auch in der Sicherung vorkommt
     const eigene = data.einstellungen;
     const einstellungen = mitEinstellungen
       ? daten.einstellungen
@@ -182,7 +182,7 @@ export function SicherungEinspielenDialog({
         )}
         <label className="checkbox">
           <input type="checkbox" checked={mitEinstellungen} onChange={(e) => setMitEinstellungen(e.target.checked)} />
-          Auch „Angemeldet als“, „Ich erfasse als“ und Farbmodus aus der Sicherung übernehmen
+          Auch die Anmeldung („Angemeldet als“) und den Farbmodus aus der Sicherung übernehmen
         </label>
       </div>
     </Modal>

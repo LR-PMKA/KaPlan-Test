@@ -3,12 +3,18 @@
  * Die Datei (.xlsx oder .csv) wird gelesen (`importLesen`) und daraus eine
  * Vorschau samt Plan gerechnet (`importPlanen`): je Projekt, wie viele
  * Leistungen neu hinzukommen, schon vorhanden sind oder frühere Importe
- * ersetzen, und welche Leistungsnachweise dabei entstehen oder wachsen. Jede
- * Änderung der Optionen plant neu – mit neuen Kennungen, außerhalb von
- * `mutate()`. „Übernehmen“ wendet genau den angezeigten Plan an.
+ * ersetzen, welche Abschnitte aus Spalte J entstehen und welche
+ * Leistungsnachweise dabei entstehen oder wachsen. Jede Änderung der Optionen
+ * plant neu – mit neuen Kennungen, außerhalb von `mutate()`. „Übernehmen“
+ * wendet genau den angezeigten Plan an.
  *
- * Leistungen anderer Mitarbeiter bleiben immer unberührt: Ersetzt werden nur
- * frühere Importe der Personen aus der Datei in deren Zeitraum der Datei.
+ * Übernommen werden nur die eigenen Zeilen der angemeldeten Person; Zeilen
+ * anderer Mitarbeiter werden mit „anderer Mitarbeiter“ übersprungen. Nur mit
+ * der Rolle Controlling lässt sich ein Sammel-Export aller Mitarbeiter der
+ * Datei übernehmen (Haken „Sammel-Export …“) – erst dann entstehen neue
+ * Mitarbeiter. Ohne Anmeldung ist der Dialog gesperrt. Leistungen anderer
+ * bleiben immer unberührt: Ersetzt werden nur frühere Importe der Personen
+ * aus der Datei in deren Zeitraum der Datei.
  */
 import { useMemo, useRef, useState } from 'react';
 import { Icon } from '../../../shared/icons';
@@ -21,19 +27,23 @@ import {
   IMPORT_STANDARDSPALTEN,
   importLesen,
   importPlanen,
+  keineEigenenLeistungen,
   unbekannteProjektnummern,
   type ImportFeld,
   type ImportGelesen,
   type ImportOptionen,
   type ImportPlan,
   type ImportVorschau,
+  type VorschauMitarbeiter,
   type VorschauProjekt,
 } from '../domain/import';
-import type { LeistungsnachweisDaten } from '../domain/types';
+import { angemeldet, darf } from '../domain/rechte';
+import { mitarbeiterName, type Abschnitt, type LeistungsnachweisDaten } from '../domain/types';
 import { stundenVon } from '../domain/nachweis';
 import { kurzDatum, stundenText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
 import { newId, useStore } from '../store/store';
+import { useAnmeldung } from './AnmeldeDialog';
 import { anzahl, mitarbeiterAuswahlText, nachNamen } from './common';
 import './leistungen.css';
 
@@ -44,11 +54,11 @@ import './leistungen.css';
 /** Erklärung der Spalten in der Reihenfolge der Zeiterfassung. */
 const SPALTEN_ERKLAERUNG: { feld: ImportFeld; wofuer: string }[] = [
   { feld: 'datum', wofuer: 'Tag der Leistung' },
-  { feld: 'mitarbeiter', wofuer: 'etwa „LR: Roese, Lukas“' },
+  { feld: 'mitarbeiter', wofuer: 'etwa „MM: Mustermann, Max“ – übernommen werden nur die eigenen Zeilen' },
   { feld: 'text', wofuer: 'Leistungstext' },
   { feld: 'stunden', wofuer: 'Stunden' },
-  { feld: 'projekt', wofuer: 'Projektnummer, etwa „K2476: …“ – ordnet die Zeile ihrem Projekt zu' },
-  { feld: 'projektelement', wofuer: 'optional, ordnet Abschnitten zu' },
+  { feld: 'projekt', wofuer: 'Projektnummer, etwa „K9101: …“ – ordnet die Zeile ihrem Projekt zu' },
+  { feld: 'projektelement', wofuer: 'optional, der Abschnitt – fehlende Abschnitte legt der Import an' },
 ];
 
 /** Spaltenbuchstabe wie in Excel: 0 → „A“. */
@@ -59,6 +69,29 @@ const spaltenBuchstabe = (index: number) => String.fromCharCode(65 + index);
  * weitere Blatt mit Leistungen; passt keines, bleibt das erste maßgeblich
  * (samt seiner Meldung, wenn gar keine Spalten passen).
  */
+/** Anfang einer nicht lesbaren Excel-Datei (src/shared/xlsxLesen.ts). */
+const KEIN_ZIP = /keine gültige Excel-Datei/;
+
+/**
+ * Verständliche Meldung, wenn sich eine Datei nicht lesen lässt: Eine als
+ * .xlsx umbenannte Sicherung (JSON) wird als solche benannt, sonst ergänzt um
+ * das, was erwartet wird.
+ */
+export async function lesefehler(datei: Blob, e: unknown): Promise<string> {
+  const meldung = e instanceof Error ? e.message : 'Die Datei konnte nicht gelesen werden.';
+  if (!KEIN_ZIP.test(meldung)) return meldung;
+  let anfang = '';
+  try {
+    anfang = (await datei.slice(0, 64).text()).trimStart();
+  } catch {
+    // ohne Anfang bleibt es bei der allgemeinen Meldung
+  }
+  if (anfang.startsWith('{')) {
+    return 'Die Datei ist eine Sicherung (JSON) und kein Export der Zeiterfassung – Sicherungen lassen sich über „Einspielen“ in der Seitenleiste laden.';
+  }
+  return `${meldung} Erwartet wird der Export der Zeiterfassung als Excel-Datei (.xlsx) oder als CSV.`;
+}
+
 export function blattLesen(tabellen: GeleseneTabelle[]): ImportGelesen {
   if (tabellen.length === 0) throw new Error('Die Datei enthält kein Tabellenblatt.');
   let erstes: ImportGelesen | null = null;
@@ -77,25 +110,56 @@ export function blattLesen(tabellen: GeleseneTabelle[]): ImportGelesen {
 }
 
 /**
- * Optionen für eine neu gelesene Datei: unbekannte Projekte anlegen (Vorgabe
- * an), frühere Importe ersetzen (Vorgabe an, eine frühere Wahl bleibt) und
- * Zeilen ohne Mitarbeiter der Person zuordnen, als die die angemeldete Person
- * erfasst (`einstellungen.mitarbeiterId`).
+ * Optionen für eine neu gelesene Datei: nur eigene Zeilen der angemeldeten
+ * Person (`angemeldetId`; Sammel-Export aus – eine frühere Wahl bleibt, aber
+ * nur mit der Rolle Controlling), unbekannte Projekte anlegen (Vorgabe an),
+ * frühere Importe ersetzen (Vorgabe an, eine frühere Wahl bleibt) und – im
+ * Sammel-Export – Zeilen ohne Mitarbeiter der angemeldeten Person zuordnen.
  */
 export function importVorgaben(
   daten: LeistungsnachweisDaten,
   gelesen: ImportGelesen,
-  bisher?: Pick<ImportOptionen, 'ersetzen'>,
+  bisher?: Partial<Pick<ImportOptionen, 'ersetzen' | 'alleMitarbeiter' | 'ersatzMitarbeiterId'>>,
 ): ImportOptionen {
-  const ich = daten.einstellungen.mitarbeiterId;
-  const angemeldetId = ich && daten.mitarbeiter.some((m) => m.id === ich && m.aktiv) ? ich : null;
+  const angemeldetId = angemeldet(daten)?.id ?? null;
+  const sammel = darf(daten, 'sammelImport') && bisher?.alleMitarbeiter === true;
+  const ersatz = bisher?.ersatzMitarbeiterId;
   return {
     angemeldetId,
-    alleMitarbeiter: false,
-    ersatzMitarbeiterId: angemeldetId,
+    alleMitarbeiter: sammel,
+    ersatzMitarbeiterId:
+      sammel && ersatz !== undefined && (ersatz === null || daten.mitarbeiter.some((m) => m.id === ersatz)) ? ersatz : angemeldetId,
     neueProjekte: Object.fromEntries(unbekannteProjektnummern(daten, gelesen).map((n) => [n, true])),
     ersetzen: bisher?.ersetzen ?? true,
   };
+}
+
+/**
+ * Die Optionen so, wie sie gerade gelten dürfen: immer mit der angemeldeten
+ * Person (auch nach einem Wechsel der Anmeldung im offenen Dialog), den
+ * Sammel-Export nur mit der Rolle Controlling.
+ */
+export function wirksameOptionen(daten: LeistungsnachweisDaten, optionen: ImportOptionen): ImportOptionen {
+  const sammel = optionen.alleMitarbeiter && darf(daten, 'sammelImport');
+  return { ...optionen, angemeldetId: angemeldet(daten)?.id ?? null, alleMitarbeiter: sammel };
+}
+
+/**
+ * Meldung, wenn die Datei Leistungen enthält, aber keine der angemeldeten
+ * Person (Normalfall) – sonst null. Die Oberfläche nennt dazu die Mitarbeiter
+ * der Datei.
+ */
+export function keineEigenenMeldung(daten: LeistungsnachweisDaten, optionen: ImportOptionen, vorschau: ImportVorschau): string | null {
+  const ich = angemeldet(daten);
+  if (!ich || optionen.alleMitarbeiter || vorschau.zugeordnet > 0 || vorschau.fremde === 0) return null;
+  return keineEigenenLeistungen(mitarbeiterName(ich) || ich.kuerzel);
+}
+
+/** „Abschnitte: 01 Nordheim · 02 Südheim – werden angelegt“ (Spalte J der Datei). */
+export function neueAbschnitteText(abschnitte: Pick<Abschnitt, 'kennung' | 'name' | 'kurz'>[]): string {
+  if (abschnitte.length === 0) return '';
+  const namen = abschnitte.map((a) => [a.kennung, a.name || a.kurz].filter(Boolean).join(' ')).join(' · ');
+  return abschnitte.length === 1 ? `Abschnitt: ${namen} – wird angelegt` : `Abschnitte: ${namen} – werden angelegt`;
 }
 
 /** Kennzahlen der Vorschau über alle Projekte. */
@@ -165,6 +229,20 @@ const NACHWEIS_ART: Record<VorschauProjekt['nachweise'][number]['art'], { label:
   vorhanden: { label: 'vorhanden', ton: '' },
 };
 
+/** Kennzeichen eines Mitarbeiters der Datei in der Vorschau. */
+function MitarbeiterArt({ m, wirdAngelegt }: { m: VorschauMitarbeiter; wirdAngelegt: boolean }) {
+  switch (m.art) {
+    case 'eigene':
+      return <Badge ton="green">eigene Leistungen</Badge>;
+    case 'anderer':
+      return <Badge>anderer Mitarbeiter – übersprungen</Badge>;
+    case 'vorhanden':
+      return <Badge ton="green">vorhanden</Badge>;
+    case 'neu':
+      return wirdAngelegt ? <Badge ton="blue">wird angelegt</Badge> : <Badge>ohne neue Leistungen</Badge>;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Dialog                                                              */
 /* ------------------------------------------------------------------ */
@@ -172,6 +250,9 @@ const NACHWEIS_ART: Record<VorschauProjekt['nachweise'][number]['art'], { label:
 export function ImportDialog({ onClose, navigate }: { onClose: () => void; navigate: (r: Route) => void }) {
   const { data, importUebernehmen } = useStore();
   const toast = useToast();
+  const anmeldung = useAnmeldung();
+  const ich = angemeldet(data);
+  const sammelErlaubt = darf(data, 'sammelImport');
   const eingabe = useRef<HTMLInputElement>(null);
   // Zählt die Lesevorgänge, damit eine langsamer gelesene frühere Datei die neuere nicht überschreibt
   const lesung = useRef(0);
@@ -188,11 +269,14 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
   });
 
   // Neu planen bei jeder Änderung der Datei, der Optionen oder des Bestands – mit neuen Kennungen
+  const wirksam = useMemo(() => wirksameOptionen(data, optionen), [data, optionen]);
   const vorschau = useMemo(
-    () => (gelesen && gelesen.posten.length > 0 ? importPlanen(data, gelesen, optionen, new Date().toISOString(), newId) : null),
-    [data, gelesen, optionen],
+    () => (ich && gelesen && gelesen.posten.length > 0 ? importPlanen(data, gelesen, wirksam, new Date().toISOString(), newId) : null),
+    [data, gelesen, wirksam, ich],
   );
   const summen = vorschau ? importSummen(vorschau) : null;
+  const sammel = wirksam.alleMitarbeiter;
+  const keineEigenen = vorschau ? keineEigenenMeldung(data, wirksam, vorschau) : null;
 
   const lies = async (f: File) => {
     const nummer = ++lesung.current;
@@ -208,8 +292,9 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
         setFehler('Die Datei enthält keine Zeile mit Datum, Stunden und Projektnummer.');
       }
     } catch (e) {
+      const meldung = await lesefehler(f, e);
       if (nummer !== lesung.current) return;
-      setFehler(e instanceof Error ? e.message : 'Die Datei konnte nicht gelesen werden.');
+      setFehler(meldung);
     }
   };
 
@@ -228,6 +313,7 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
 
   const aktive = data.mitarbeiter.filter((m) => m.aktiv).sort(nachNamen);
   const neueKuerzel = new Set(vorschau?.plan.neueMitarbeiter.map((m) => m.kuerzel) ?? []);
+  const ichName = ich ? mitarbeiterName(ich) || ich.kuerzel : '';
   const uebersprungen = vorschau?.uebersprungen ?? gelesen?.uebersprungen ?? [];
   const gruende = [...uebersprungen.reduce((m, u) => m.set(u.grund, (m.get(u.grund) ?? 0) + 1), new Map<string, number>())];
   const moeglich = !!vorschau && importMoeglich(vorschau.plan);
@@ -235,7 +321,11 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
   return (
     <Modal
       titel="Leistungen aus Excel übernehmen"
-      sub="Export der Zeiterfassung (.xlsx oder .csv) – auch mit mehreren Projekten und Mitarbeitern"
+      sub={
+        ich
+          ? `Export der Zeiterfassung (.xlsx oder .csv) – auch mit mehreren Projekten · für ${ichName}`
+          : 'Export der Zeiterfassung (.xlsx oder .csv) – auch mit mehreren Projekten'
+      }
       wide
       onClose={onClose}
       footer={
@@ -254,8 +344,45 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
       }
     >
       <div className="stack" style={{ gap: 14 }}>
+        {!ich ? (
+          <Callout ton="warn" icon="!">
+            <div className="row-between wrap">
+              <span>Übernommen werden nur eigene Leistungen – bitte zuerst anmelden.</span>
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => anmeldung()}>
+                Anmelden
+              </button>
+            </div>
+          </Callout>
+        ) : null}
+
+        {ich ? (
+          <div className="ln-imp-wer">
+            {sammel ? (
+              <span>Übernommen werden die Leistungen aller Mitarbeiter der Datei; unbekannte Mitarbeiter werden angelegt.</span>
+            ) : (
+              <span>
+                Übernommen werden nur Ihre eigenen Leistungen ({ichName}). Zeilen anderer Mitarbeiter werden übersprungen.
+              </span>
+            )}
+            {sammelErlaubt ? (
+              <label className="checkbox ln-imp-sammel">
+                <input
+                  type="checkbox"
+                  checked={optionen.alleMitarbeiter}
+                  onChange={(e) => {
+                    const an = e.target.checked;
+                    setOptionen((o) => ({ ...o, alleMitarbeiter: an, ersatzMitarbeiterId: o.ersatzMitarbeiterId ?? ich.id }));
+                  }}
+                />
+                Sammel-Export: Leistungen aller Mitarbeiter der Datei übernehmen
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
         <div
           className={`drop-zone ${ueber ? 'over' : ''} ${datei ? 'ln-imp-klein' : ''}`}
+          style={ich ? undefined : { display: 'none' }}
           onClick={() => eingabe.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -304,7 +431,7 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
           </Callout>
         ) : null}
 
-        {!vorschau ? (
+        {ich && !vorschau ? (
           <Callout icon="i">
             Erwartet wird der Export der Zeiterfassung mit einer Kopfzeile. Gelesen werden diese Spalten – ohne erkannte
             Überschriften gelten die Buchstaben in Klammern:
@@ -316,9 +443,9 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
               ))}
             </ul>
             Ein Import kann mehrere Projekte enthalten; jede Leistung landet in ihrem Projekt und dort im
-            Leistungsnachweis ihres Zeitraums. Zeilen ohne Projekt (Urlaub, Fortbildung …) und Summenzeilen werden
-            übersprungen. Leistungen anderer Mitarbeiter bleiben unverändert. Über <em>Vorlage</em> erhalten Sie eine
-            Datei mit den Spalten der Zeiterfassung.
+            Leistungsnachweis ihres Zeitraums. Fehlende Abschnitte aus der Spalte Projektelement werden angelegt. Zeilen
+            ohne Projekt (Urlaub, Fortbildung …) und Summenzeilen werden übersprungen. Leistungen anderer Mitarbeiter
+            bleiben unverändert. Über <em>Vorlage</em> gibt es eine Datei mit den Spalten der Zeiterfassung.
           </Callout>
         ) : null}
 
@@ -343,7 +470,22 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
               </div>
             </div>
 
-            {!moeglich ? (
+            {keineEigenen ? (
+              <Callout ton="warn" icon="!">
+                <div className="stack" style={{ gap: 6 }}>
+                  <strong>{keineEigenen}</strong>
+                  <span className="small">
+                    Mitarbeiter der Datei:{' '}
+                    {vorschau.mitarbeiter.map((m) => m.text).join(' · ') || '–'}
+                  </span>
+                  <span className="small">
+                    {sammelErlaubt
+                      ? 'Mit der Rolle Controlling lässt sich die Datei als Sammel-Export übernehmen – Haken oben setzen.'
+                      : 'Stimmt die Anmeldung? Unter „Angemeldet als“ in der Seitenleiste lässt sie sich wechseln; einen Sammel-Export aller Mitarbeiter übernimmt das Controlling.'}
+                  </span>
+                </div>
+              </Callout>
+            ) : !moeglich ? (
               <Callout icon="i">
                 Nichts zu übernehmen – {summen.doppelt > 0 ? 'alle Leistungen der Datei sind bereits vorhanden' : 'keine Zeile lässt sich übernehmen'}.
               </Callout>
@@ -352,7 +494,7 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
             {summen.inAbgeschlossenem > 0 ? (
               <Callout ton="warn" icon="!">
                 {anzahl(summen.inAbgeschlossenem, 'Leistung betrifft', 'Leistungen betreffen')} abgeschlossene
-                Leistungsnachweise – deren festgeschriebener Stand ändert sich erst nach „Wieder öffnen“.
+                Leistungsnachweise – deren festgeschriebener Stand ändert sich erst nach „Wieder öffnen“ im Controlling.
               </Callout>
             ) : null}
 
@@ -361,24 +503,27 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
               {vorschau.mitarbeiter.length > 0 ? (
                 <ul className="ln-imp-personen">
                   {vorschau.mitarbeiter.map((m) => (
-                    <li key={m.text} title={m.text}>
-                      <span className="mono">{m.kuerzel}</span>
-                      <strong>{m.name || m.text}</strong>
-                      {m.mitarbeiterId ? (
-                        <Badge ton="green">vorhanden</Badge>
-                      ) : neueKuerzel.has(m.kuerzel) ? (
-                        <Badge ton="blue">wird angelegt</Badge>
-                      ) : (
-                        <Badge>ohne neue Leistungen</Badge>
-                      )}
-                      <span className="small tertiary">{anzahl(m.anzahl, 'Zeile', 'Zeilen')}</span>
+                    <li key={m.text} title={m.text} className={m.art === 'anderer' ? 'ln-imp-fremd' : ''}>
+                      <span className="ln-imp-person">
+                        <span className="mono">{m.kuerzel}</span>
+                        <strong>{m.name || m.text}</strong>
+                        <MitarbeiterArt m={m} wirdAngelegt={neueKuerzel.has(m.kuerzel)} />
+                        <span className="small tertiary">{anzahl(m.anzahl, 'Zeile', 'Zeilen')}</span>
+                      </span>
+                      {m.hinweis ? <span className="ln-imp-hinweis">{m.hinweis}</span> : null}
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p className="small tertiary">Die Datei nennt keinen Mitarbeiter.</p>
               )}
-              {vorschau.ohneMitarbeiter > 0 ? (
+              {!sammel && vorschau.ohneMitarbeiter > 0 ? (
+                <p className="small tertiary" style={{ marginTop: 6 }}>
+                  {anzahl(vorschau.ohneMitarbeiter, 'Zeile nennt', 'Zeilen nennen')} keinen Mitarbeiter und{' '}
+                  {vorschau.ohneMitarbeiter === 1 ? 'zählt' : 'zählen'} als eigene Leistungen ({ichName}).
+                </p>
+              ) : null}
+              {sammel && vorschau.ohneMitarbeiter > 0 ? (
                 <div style={{ marginTop: 10, maxWidth: 420 }}>
                   <Field
                     label="Zeilen ohne Mitarbeiter zuordnen zu"
@@ -424,6 +569,11 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
                               {unbekannt ? <Badge ton={p.anlegen ? 'blue' : ''}>{p.anlegen ? 'neues Projekt' : 'unbekannt'}</Badge> : null}
                             </span>
                             <div className="small muted">{p.name}</div>
+                            {!aus && p.neueAbschnitte.length > 0 ? (
+                              <div className="ln-imp-abschnitte" title="Aus der Spalte Projektelement (J)">
+                                {neueAbschnitteText(p.neueAbschnitte)}
+                              </div>
+                            ) : null}
                             {unbekannt ? (
                               <label className="checkbox ln-imp-anlegen">
                                 <input type="checkbox" checked={p.anlegen} onChange={(e) => anlegenSetzen(p.nummer, e.target.checked)} />
@@ -481,12 +631,13 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
                   checked={optionen.ersetzen}
                   onChange={(e) => setOptionen((o) => ({ ...o, ersetzen: e.target.checked }))}
                 />
-                Frühere Importe dieser Personen im Zeitraum ersetzen
+                {sammel ? 'Frühere Importe dieser Personen im Zeitraum ersetzen' : 'Frühere eigene Importe im Zeitraum ersetzen'}
               </label>
               <span className="hint">
-                Importierte Leistungen der Personen aus der Datei, die zwischen ihrem ersten und letzten Datum der Datei
-                liegen und dort nicht mehr vorkommen, entfallen – so lässt sich ein korrigierter Export erneut
-                einspielen. Händisch erfasste Leistungen und Leistungen anderer Mitarbeiter bleiben unverändert.
+                {sammel
+                  ? 'Importierte Leistungen der Personen aus der Datei, die zwischen ihrem ersten und letzten Datum der Datei liegen und dort nicht mehr vorkommen, entfallen – so lässt sich ein korrigierter Export erneut einspielen.'
+                  : 'Eigene importierte Leistungen, die zwischen dem ersten und letzten eigenen Datum der Datei liegen und dort nicht mehr vorkommen, entfallen – so lässt sich ein korrigierter Export erneut einspielen.'}{' '}
+                Händisch erfasste Leistungen und Leistungen anderer Mitarbeiter bleiben unverändert.
               </span>
             </div>
           </>

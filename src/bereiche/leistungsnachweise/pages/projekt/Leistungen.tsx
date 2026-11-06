@@ -1,21 +1,26 @@
 /**
- * Reiter „Leistungen“ eines Projekts: alle erfassten und importierten
- * Leistungen mit Filter nach Monat und Mitarbeiter, Suche, Summe der
- * angezeigten Stunden und Excel-Ausgabe. Jede Zeile nennt den
- * Leistungsnachweis, in dem sie erscheint – das ergibt sich allein aus dem
- * Datum. Mehrere Leistungen lassen sich mit Haken auswählen und gemeinsam
- * löschen.
+ * Reiter „Leistungen“ eines Projekts: die eigenen erfassten und importierten
+ * Leistungen der angemeldeten Person mit Filter nach Monat, Suche und Summe
+ * der angezeigten Stunden. Jede Zeile nennt den Leistungsnachweis, in dem sie
+ * erscheint – das ergibt sich allein aus dem Datum. Mehrere Leistungen lassen
+ * sich mit Haken auswählen und gemeinsam löschen.
+ *
+ * Mit der Rolle Controlling schaltet „Meine / Alle“ auf die Leistungen aller
+ * Mitarbeiter um (mit Filter nach Mitarbeiter) – die der anderen nur zum
+ * Lesen, ohne Stift und Haken (domain/rechte.ts). Die Excel-Liste gibt es im
+ * Controlling.
  */
 import { useState } from 'react';
 import { wochentag } from '../../../../shared/dates';
 import { Icon } from '../../../../shared/icons';
 import { useToast } from '../../../../shared/toast';
-import { Card, CardHeader, ConfirmDialog, EmptyState, Search, Select } from '../../../../shared/ui';
+import { Callout, Card, CardHeader, ConfirmDialog, EmptyState, Search, Segmented, Select } from '../../../../shared/ui';
+import { useAnmeldung, useMitAnmeldung } from '../../components/AnmeldeDialog';
 import { ImportDialog } from '../../components/ImportDialog';
 import { LeistungDialog, abgeschlossenHinweis, nachweisName } from '../../components/LeistungDialog';
 import { QuelleBadge, anzahl, mitarbeiterAuswahlText } from '../../components/common';
-import { leistungenExportieren } from '../../domain/export';
 import { nachweiseVon, nachweisTitel, stundenVon } from '../../domain/nachweis';
+import { angemeldet, darfLeistungAendern, darfLeistungSehen, eigeneLeistungen, istControlling } from '../../domain/rechte';
 import { QUELLE_LABEL, mitarbeiterName, type Leistung, type Leistungsnachweis, type Projekt } from '../../domain/types';
 import { langDatum, monatText, stundenText } from '../../domain/zeitraum';
 import type { Route } from '../../lib/router';
@@ -24,6 +29,9 @@ import '../../components/leistungen.css';
 
 /** Filterwert für alle Monate bzw. alle Mitarbeiter. */
 const ALLE = '';
+
+/** Eigene Leistungen oder (nur Controlling) die aller Mitarbeiter. */
+type Sicht = 'meine' | 'alle';
 
 /** Neueste zuerst; am selben Tag nach Person und Erfassung. */
 function nachDatum(namen: Map<string, string>) {
@@ -36,6 +44,9 @@ function nachDatum(namen: Map<string, string>) {
 export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: (r: Route) => void }) {
   const { data, deleteLeistung, deleteLeistungen } = useStore();
   const toast = useToast();
+  const anmeldung = useAnmeldung();
+  const mitAnmeldung = useMitAnmeldung();
+  const [sicht, setSicht] = useState<Sicht>('meine');
   const [suche, setSuche] = useState('');
   const [monat, setMonat] = useState(ALLE);
   const [person, setPerson] = useState(ALLE);
@@ -56,13 +67,22 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
   const nachweise = nachweiseVon(data, projekt.id);
   const nachweisZu = (l: Leistung): Leistungsnachweis | undefined => nachweise.find((n) => l.datum >= n.von && l.datum <= n.bis);
 
-  const alle = data.leistungen.filter((l) => l.projektId === projekt.id).sort(nachDatum(namen));
+  const ich = angemeldet(data);
+  const controlling = istControlling(data);
+  // „Alle“ nur mit der Rolle Controlling – sonst stets die eigenen
+  const alleSicht = controlling && sicht === 'alle';
+  const imProjekt = data.leistungen.filter((l) => l.projektId === projekt.id);
+  // Wer was einzeln sieht, entscheidet domain/rechte.ts: eigene, mit der Rolle Controlling alle (nur lesen)
+  const alle = (alleSicht ? imProjekt.filter((l) => darfLeistungSehen(data, l)) : eigeneLeistungen(data, imProjekt)).sort(
+    nachDatum(namen),
+  );
+  const eigen = (l: Leistung) => darfLeistungAendern(data, l);
 
   // Auswahlfelder aus den vorhandenen Leistungen
   const monate = [...alle.reduce((m, l) => m.set(l.datum.slice(0, 7), (m.get(l.datum.slice(0, 7)) ?? 0) + 1), new Map<string, number>())];
   const personen = [...new Set(alle.map((l) => l.mitarbeiterId))].sort((a, b) => name(a).localeCompare(name(b), 'de'));
   const aktiverMonat = monat === ALLE || monate.some(([m]) => m === monat) ? monat : ALLE;
-  const aktivePerson = person === ALLE || personen.includes(person) ? person : ALLE;
+  const aktivePerson = alleSicht && (person === ALLE || personen.includes(person)) ? person : ALLE;
 
   const begriff = suche.trim().toLowerCase();
   const sichtbar = alle.filter((l) => {
@@ -79,9 +99,10 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
   const summe = stundenVon(sichtbar);
   const gefiltert = aktiverMonat !== ALLE || aktivePerson !== ALLE || !!begriff;
 
-  // Ausgewählt zählt nur, was gerade zu sehen ist
-  const gewaehlt = sichtbar.filter((l) => auswahl.has(l.id));
-  const alleGewaehlt = sichtbar.length > 0 && gewaehlt.length === sichtbar.length;
+  // Ausgewählt zählt nur, was gerade zu sehen ist – und nur eigene Leistungen
+  const waehlbar = sichtbar.filter(eigen);
+  const gewaehlt = waehlbar.filter((l) => auswahl.has(l.id));
+  const alleGewaehlt = waehlbar.length > 0 && gewaehlt.length === waehlbar.length;
   const umschalten = (id: string) =>
     setAuswahl((alt) => {
       const neu = new Set(alt);
@@ -99,21 +120,51 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
   };
 
   const neuKnopf = (
-    <button type="button" className="btn btn-primary" onClick={() => setDialog({})}>
+    <button type="button" className="btn btn-primary" onClick={() => mitAnmeldung(() => setDialog({}))}>
       <Icon name="plus" size={14} /> Leistung erfassen
     </button>
   );
   const importKnopf = (
-    <button type="button" className="btn btn-outline" onClick={() => setImportOffen(true)}>
+    <button type="button" className="btn btn-outline" onClick={() => mitAnmeldung(() => setImportOffen(true))}>
       <Icon name="importieren" size={14} /> Excel-Import
     </button>
   );
+
+  if (!ich) {
+    return (
+      <Card>
+        <EmptyState
+          icon="person"
+          titel="Bitte anmelden"
+          text="Hier stehen die eigenen Leistungen in diesem Projekt – erfasst und importiert wird immer für die angemeldete Person."
+          action={
+            <button type="button" className="btn btn-primary" onClick={() => anmeldung()}>
+              Anmelden
+            </button>
+          }
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="stack">
       <div className="row-between wrap">
         <div className="ln-le-filter">
-          <Search value={suche} onChange={setSuche} placeholder="Text, Mitarbeiter, Abschnitt …" />
+          {controlling ? (
+            <Segmented<Sicht>
+              value={sicht}
+              onChange={(v) => {
+                setSicht(v);
+                setAuswahl(new Set());
+              }}
+              options={[
+                { value: 'meine', label: 'Meine' },
+                { value: 'alle', label: 'Alle' },
+              ]}
+            />
+          ) : null}
+          <Search value={suche} onChange={setSuche} placeholder={alleSicht ? 'Text, Mitarbeiter, Abschnitt …' : 'Text, Abschnitt …'} />
           <Select
             value={aktiverMonat}
             onChange={setMonat}
@@ -122,36 +173,36 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
               ...monate.map(([m, n]) => ({ value: m, label: `${monatText(`${m}-01`)} (${n})` })),
             ]}
           />
-          <Select
-            value={aktivePerson}
-            onChange={setPerson}
-            options={[
-              { value: ALLE, label: 'Alle Mitarbeiter' },
-              ...personen.map((id) => {
-                const m = mitarbeiter.get(id);
-                return { value: id, label: m ? mitarbeiterAuswahlText(m) : '? (unbekannt)' };
-              }),
-            ]}
-          />
+          {alleSicht ? (
+            <Select
+              value={aktivePerson}
+              onChange={setPerson}
+              options={[
+                { value: ALLE, label: 'Alle Mitarbeiter' },
+                ...personen.map((id) => {
+                  const m = mitarbeiter.get(id);
+                  return { value: id, label: m ? mitarbeiterAuswahlText(m) : '? (unbekannt)' };
+                }),
+              ]}
+            />
+          ) : null}
         </div>
         <div className="row wrap">
           {importKnopf}
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => leistungenExportieren(data, projekt, sichtbar)}
-            disabled={sichtbar.length === 0}
-            title={gefiltert ? 'Die angezeigten Leistungen als Excel-Liste' : 'Alle Leistungen als Excel-Liste'}
-          >
-            <Icon name="export" size={14} /> Excel
-          </button>
           {neuKnopf}
         </div>
       </div>
 
+      {alleSicht ? (
+        <Callout icon="i">
+          Leistungen aller Mitarbeiter – die der anderen nur zum Lesen: Ändern und löschen kann eine Leistung nur die Person,
+          die sie erbracht hat. Die Excel-Liste gibt es im Controlling.
+        </Callout>
+      ) : null}
+
       <Card>
         <CardHeader
-          titel="Leistungen"
+          titel={alleSicht ? 'Leistungen aller Mitarbeiter' : 'Meine Leistungen'}
           sub={`${anzahl(sichtbar.length, 'Leistung', 'Leistungen')}${
             gefiltert ? ` von ${alle.length}` : ''
           } · ${stundenText(summe)} Std. · Jede Leistung erscheint im Leistungsnachweis ihres Zeitraums`}
@@ -177,8 +228,8 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
           alle.length === 0 ? (
             <EmptyState
               icon="stunden"
-              titel="Noch keine Leistungen"
-              text="Erfassen Sie Leistungen von Hand oder übernehmen Sie sie mit dem Excel-Import aus der Zeiterfassung – jede Leistung erscheint automatisch im Leistungsnachweis ihres Zeitraums."
+              titel={alleSicht ? 'Noch keine Leistungen' : 'Noch keine eigenen Leistungen'}
+              text="Eigene Leistungen lassen sich von Hand erfassen oder mit dem Excel-Import aus der Zeiterfassung übernehmen – jede Leistung erscheint automatisch im gemeinsamen Leistungsnachweis ihres Zeitraums."
               action={
                 <div className="row wrap" style={{ justifyContent: 'center' }}>
                   {importKnopf}
@@ -208,25 +259,26 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
                       <input
                         type="checkbox"
                         checked={alleGewaehlt}
+                        disabled={waehlbar.length === 0}
                         ref={(el) => {
                           if (el) el.indeterminate = gewaehlt.length > 0 && !alleGewaehlt;
                         }}
                         onChange={() =>
                           setAuswahl((alt) => {
                             const neu = new Set(alt);
-                            for (const l of sichtbar) {
+                            for (const l of waehlbar) {
                               if (alleGewaehlt) neu.delete(l.id);
                               else neu.add(l.id);
                             }
                             return neu;
                           })
                         }
-                        aria-label="Alle angezeigten Leistungen auswählen"
-                        title="Alle angezeigten Leistungen auswählen"
+                        aria-label={alleSicht ? 'Alle angezeigten eigenen Leistungen auswählen' : 'Alle angezeigten Leistungen auswählen'}
+                        title={alleSicht ? 'Alle angezeigten eigenen Leistungen auswählen' : 'Alle angezeigten Leistungen auswählen'}
                       />
                     </th>
                     <th>Datum</th>
-                    <th className="ln-le-spalte-wer">Mitarbeiter</th>
+                    {alleSicht ? <th className="ln-le-spalte-wer">Mitarbeiter</th> : null}
                     <th>Leistungstext</th>
                     {mitAbschnitten ? <th className="col-optional ln-le-breit">Abschnitt</th> : null}
                     <th className="ln-stunden">Stunden</th>
@@ -242,31 +294,37 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
                     const n = nachweisZu(l);
                     const geschlossen = n?.status === 'abgeschlossen';
                     const markiert = auswahl.has(l.id);
+                    const aendern = eigen(l);
                     return (
                       <tr
                         key={l.id}
-                        className={`clickable ${markiert ? 'ln-le-gewaehlt' : ''}`}
-                        onClick={() => setDialog({ leistung: l })}
+                        className={`${aendern ? 'clickable' : 'ln-le-fremd'} ${markiert ? 'ln-le-gewaehlt' : ''}`}
+                        onClick={aendern ? () => setDialog({ leistung: l }) : undefined}
+                        title={aendern ? undefined : `Leistung von ${name(l.mitarbeiterId)} – nur zu lesen`}
                       >
                         <td className="ln-le-haken" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={markiert}
-                            onChange={() => umschalten(l.id)}
-                            aria-label="Leistung auswählen"
-                          />
+                          {aendern ? (
+                            <input
+                              type="checkbox"
+                              checked={markiert}
+                              onChange={() => umschalten(l.id)}
+                              aria-label="Leistung auswählen"
+                            />
+                          ) : null}
                         </td>
                         <td className="ln-le-datum">
                           <span className="ln-le-wochentag">{wochentag(l.datum)}</span> {langDatum(l.datum)}
-                          <span className="ln-le-wer">{name(l.mitarbeiterId)}</span>
+                          {alleSicht ? <span className="ln-le-wer">{name(l.mitarbeiterId)}</span> : null}
                         </td>
-                        <td
-                          className="ln-le-person ln-le-spalte-wer"
-                          title={m ? `${m.kuerzel} – ${mitarbeiterName(m)}` : 'Unbekannter Mitarbeiter'}
-                        >
-                          {name(l.mitarbeiterId)}
-                          {m && !m.aktiv ? <span className="small tertiary"> (ausgeschieden)</span> : null}
-                        </td>
+                        {alleSicht ? (
+                          <td
+                            className="ln-le-person ln-le-spalte-wer"
+                            title={m ? `${m.kuerzel} – ${mitarbeiterName(m)}` : 'Unbekannter Mitarbeiter'}
+                          >
+                            {name(l.mitarbeiterId)}
+                            {m && !m.aktiv ? <span className="small tertiary"> (ausgeschieden)</span> : null}
+                          </td>
+                        ) : null}
                         <td className="ln-le-text">
                           {l.text}
                           {l.projektelement && !a ? <span className="ln-le-element">{l.projektelement}</span> : null}
@@ -303,34 +361,40 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
                           <QuelleBadge quelle={l.quelle} />
                         </td>
                         <td className="actions">
-                          <button
-                            type="button"
-                            className="btn-icon ln-le-bearbeiten"
-                            aria-label="Leistung bearbeiten"
-                            title={
-                              geschlossen && n
-                                ? `Leistung bearbeiten – sie liegt im abgeschlossenen Nachweis „${nachweisName(n)}“`
-                                : 'Leistung bearbeiten'
-                            }
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDialog({ leistung: l });
-                            }}
-                          >
-                            <Icon name="bearbeiten" size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            aria-label="Leistung löschen"
-                            title="Leistung löschen"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setLoeschen(l);
-                            }}
-                          >
-                            <Icon name="loeschen" size={15} />
-                          </button>
+                          {aendern ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-icon ln-le-bearbeiten"
+                                aria-label="Leistung bearbeiten"
+                                title={
+                                  geschlossen && n
+                                    ? `Leistung bearbeiten – sie liegt im abgeschlossenen Nachweis „${nachweisName(n)}“`
+                                    : 'Leistung bearbeiten'
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDialog({ leistung: l });
+                                }}
+                              >
+                                <Icon name="bearbeiten" size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                aria-label="Leistung löschen"
+                                title="Leistung löschen"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLoeschen(l);
+                                }}
+                              >
+                                <Icon name="loeschen" size={15} />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="ln-le-nurlesen">nur lesen</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -362,9 +426,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
       {loeschen ? (
         <ConfirmDialog
           titel="Leistung löschen?"
-          text={`Die Leistung vom ${langDatum(loeschen.datum)} (${name(loeschen.mitarbeiterId)}, ${stundenText(
-            loeschen.stunden,
-          )} Std.) wird gelöscht.${geschlosseneIn([loeschen]).length ? ` ${abgeschlossenHinweis(geschlosseneIn([loeschen])[0])}` : ''}`}
+          text={`Die Leistung vom ${langDatum(loeschen.datum)} (${stundenText(loeschen.stunden)} Std.) wird gelöscht.${geschlosseneIn([loeschen]).length ? ` ${abgeschlossenHinweis(geschlosseneIn([loeschen])[0])}` : ''}`}
           onConfirm={() => {
             deleteLeistung(loeschen.id);
             toast('Leistung gelöscht.');
@@ -378,7 +440,7 @@ export function Leistungen({ projekt, navigate }: { projekt: Projekt; navigate: 
           titel="Auswahl löschen?"
           text={`${anzahl(gewaehlt.length, 'Leistung', 'Leistungen')} mit zusammen ${stundenText(stundenVon(gewaehlt))} Std. ${gewaehlt.length === 1 ? 'wird' : 'werden'} gelöscht.${
             geschlosseneIn(gewaehlt).length
-              ? ` Abgeschlossene Nachweise (${geschlosseneIn(gewaehlt).map(nachweisName).join(', ')}) ändern sich erst nach „Wieder öffnen“.`
+              ? ` Abgeschlossene Nachweise (${geschlosseneIn(gewaehlt).map(nachweisName).join(', ')}) ändern sich erst nach „Wieder öffnen“ im Controlling.`
               : ''
           }`}
           onConfirm={() => {

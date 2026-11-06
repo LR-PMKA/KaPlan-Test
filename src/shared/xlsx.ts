@@ -9,7 +9,9 @@
  * Rahmen, Ausrichtung, Umbruch, Datum, Zahlenformat, Formel). Ein Blatt kann
  * Zellen zusammenfassen, Spaltenbreiten und Zeilenhöhen vorgeben, obere
  * Zeilen fixieren und quer oder hoch auf Seitenbreite gedruckt werden – mit
- * Druckbereich, wiederholten Kopfzeilen und Fußzeile.
+ * Druckbereich, wiederholten Kopfzeilen und Fußzeile. Bilder (PNG, JPEG)
+ * liegen frei über den Zellen, etwa ein Logo im Kopf; sie stehen als
+ * Binäreinträge im ZIP.
  *
  * Alle Angaben über die schlichte Zelle hinaus sind freiwillig; wer sie nicht
  * nutzt, erhält dieselbe Datei wie zuvor.
@@ -79,6 +81,58 @@ export interface Blatt {
    * Seitenzahl, „&N“ Zahl der Seiten; ein einzelnes „&“ als „&&“ schreiben.
    */
   fusszeile?: { links?: string; mitte?: string; rechts?: string };
+  /** Bilder über den Zellen, etwa ein Logo im Kopf. */
+  bilder?: Bild[];
+}
+
+/**
+ * Bild im Blatt (PNG oder JPEG), frei über den Zellen. Lage und Größe gelten in
+ * Bildpunkten (96 dpi) ab der linken oberen Ecke des Blatts; verankert wird es
+ * an der Zelle, in der seine linke obere Ecke liegt – so wandert es mit, wenn
+ * darüber Zeilen oder davor Spalten eingefügt werden.
+ */
+export interface Bild {
+  /** Bilddaten; andere Formate als PNG und JPEG werden übergangen (`bildArt`). */
+  daten: Uint8Array;
+  x: number;
+  y: number;
+  breite: number;
+  hoehe: number;
+  /** Beschreibung (Alternativtext). */
+  name?: string;
+}
+
+/** Format von Bilddaten anhand ihrer ersten Bytes: PNG, JPEG oder null. */
+export function bildArt(daten: Uint8Array): 'png' | 'jpeg' | null {
+  if (daten.length > 8 && daten[0] === 0x89 && daten[1] === 0x50 && daten[2] === 0x4e && daten[3] === 0x47) return 'png';
+  if (daten.length > 3 && daten[0] === 0xff && daten[1] === 0xd8 && daten[2] === 0xff) return 'jpeg';
+  return null;
+}
+
+/** Größe eines PNG- oder JPEG-Bilds in Bildpunkten; null, wenn sie sich nicht lesen lässt. */
+export function bildGroesse(daten: Uint8Array): { breite: number; hoehe: number } | null {
+  const art = bildArt(daten);
+  const wort = (i: number) => (daten[i] << 8) | daten[i + 1];
+  if (art === 'png' && daten.length >= 24) {
+    const zahl = (i: number) => ((daten[i] << 24) >>> 0) + (daten[i + 1] << 16) + (daten[i + 2] << 8) + daten[i + 3];
+    return { breite: zahl(16), hoehe: zahl(20) };
+  }
+  if (art === 'jpeg') {
+    // Die Größe steht im ersten SOF-Abschnitt (0xC0–0xCF außer 0xC4, 0xC8, 0xCC)
+    let i = 2;
+    while (i + 9 < daten.length) {
+      if (daten[i] !== 0xff) {
+        i++;
+        continue;
+      }
+      const marke = daten[i + 1];
+      if (marke >= 0xc0 && marke <= 0xcf && marke !== 0xc4 && marke !== 0xc8 && marke !== 0xcc) {
+        return { breite: wort(i + 7), hoehe: wort(i + 5) };
+      }
+      i += 2 + wort(i + 2);
+    }
+  }
+  return null;
 }
 
 /* ----------------------------- ZIP ------------------------------- */
@@ -106,7 +160,13 @@ interface ZipEintrag {
   offset: number;
 }
 
-function schreibeZip(dateien: { name: string; inhalt: string }[]): Blob {
+/** Eintrag im ZIP: Text (als UTF-8 abgelegt) oder Bytes, etwa ein Bild. */
+interface ZipDatei {
+  name: string;
+  inhalt: string | Uint8Array;
+}
+
+function schreibeZip(dateien: ZipDatei[]): Blob {
   const encoder = new TextEncoder();
   const teile: Uint8Array[] = [];
   const eintraege: ZipEintrag[] = [];
@@ -127,7 +187,7 @@ function schreibeZip(dateien: { name: string; inhalt: string }[]): Blob {
 
   for (const datei of dateien) {
     const name = encoder.encode(datei.name);
-    const daten = encoder.encode(datei.inhalt);
+    const daten = typeof datei.inhalt === 'string' ? encoder.encode(datei.inhalt) : datei.inhalt;
     const crc = crc32(daten);
     eintraege.push({ name: datei.name, laenge: daten.length, crc, offset });
 
@@ -343,7 +403,23 @@ function text(zelle: Zelle): string {
   return istFormatiert(zelle) && zelle.datum ? '00.00.0000' : String(wert ?? '');
 }
 
-function blattXml(blatt: Blatt, formate: Formate): string {
+/** Breiten aller Spalten in Zeichen: vorgegeben oder nach dem Inhalt. */
+function spaltenbreitenVon(blatt: Blatt): number[] {
+  const spaltenzahl = Math.max(...blatt.zeilen.map((z) => z.length), blatt.spaltenbreiten?.length ?? 0, 1);
+  return Array.from({ length: spaltenzahl }, (_, c) => {
+    const vorgabe = blatt.spaltenbreiten?.[c];
+    return vorgabe ?? Math.min(60, Math.max(...blatt.zeilen.map((z) => text(z[c]).length), 10) + 3);
+  });
+}
+
+/** Namensraum der Beziehungen (r:id) in Blatt und Zeichnung. */
+const BEZIEHUNGEN_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/**
+ * Blatt als XML. `zeichnung`: Kennung der Beziehung zur Zeichnung mit den
+ * Bildern; ohne Bilder bleibt das Blatt, wie es war.
+ */
+function blattXml(blatt: Blatt, formate: Formate, zeichnung?: string): string {
   const kopfFett = blatt.kopfzeileFett ?? true;
   const zeilen = blatt.zeilen
     .map((zeile, r) => {
@@ -375,12 +451,9 @@ function blattXml(blatt: Blatt, formate: Formate): string {
     })
     .join('');
 
-  const spaltenzahl = Math.max(...blatt.zeilen.map((z) => z.length), blatt.spaltenbreiten?.length ?? 0, 1);
-  const breiten = Array.from({ length: spaltenzahl }, (_, c) => {
-    const vorgabe = blatt.spaltenbreiten?.[c];
-    const laenge = vorgabe ?? Math.min(60, Math.max(...blatt.zeilen.map((z) => text(z[c]).length), 10) + 3);
-    return `<col min="${c + 1}" max="${c + 1}" width="${laenge}" customWidth="1"/>`;
-  }).join('');
+  const breiten = spaltenbreitenVon(blatt)
+    .map((laenge, c) => `<col min="${c + 1}" max="${c + 1}" width="${laenge}" customWidth="1"/>`)
+    .join('');
 
   const fixiert = blatt.fixierteZeilen
     ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${blatt.fixierteZeilen}" topLeftCell="A${
@@ -403,16 +476,125 @@ function blattXml(blatt: Blatt, formate: Formate): string {
   const eingepasst = blatt.querformat || blatt.hochformat;
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-${eingepasst ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : ''}${fixiert}<cols>${breiten}</cols><sheetData>${zeilen}</sheetData>${zusammen}${druck}${kopfFuss}</worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"${zeichnung ? ` xmlns:r="${BEZIEHUNGEN_NS}"` : ''}>
+${eingepasst ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : ''}${fixiert}<cols>${breiten}</cols><sheetData>${zeilen}</sheetData>${zusammen}${druck}${kopfFuss}${
+    zeichnung ? `<drawing r:id="${zeichnung}"/>` : ''
+  }</worksheet>`;
+}
+
+/* ---------------------------- Bilder ------------------------------ */
+
+/** 1 Bildpunkt (96 dpi) in EMU, der Längeneinheit von DrawingML. */
+const EMU = 9525;
+
+/**
+ * Breite einer Spalte (in Zeichen, wie `Blatt.spaltenbreiten`) in Bildpunkten –
+ * so rechnet Excel bei der Standardschrift Calibri 11 (Ziffernbreite 7 px).
+ * Hilft, Bilder an Spalten auszurichten.
+ */
+export function spaltePixel(breite: number): number {
+  return Math.trunc(((256 * breite + Math.trunc(128 / 7)) / 256) * 7);
+}
+
+/** Zelle (0-basiert) und Versatz in Bildpunkten zu einer Lage, aus den Größen der Spalten bzw. Zeilen. */
+function anker(lage: number, groesse: (index: number) => number): { index: number; versatz: number } {
+  let index = 0;
+  let rest = Math.max(0, lage);
+  // Begrenzt, damit eine unsinnige Lage nicht endlos zählt
+  while (index < 16384 && rest >= groesse(index)) {
+    rest -= groesse(index);
+    index++;
+  }
+  return { index, versatz: rest };
+}
+
+/** Bild mit Format und Dateiname im ZIP. */
+interface MedienBild {
+  bild: Bild;
+  art: 'png' | 'jpeg';
+  datei: string;
+}
+
+/** Zeichnung (xl/drawings/drawingN.xml) mit den Bildern eines Blatts, verankert an je einer Zelle. */
+function zeichnungXml(blatt: Blatt, bilder: MedienBild[]): string {
+  const spalten = spaltenbreitenVon(blatt).map(spaltePixel);
+  // Spalten ohne Angabe haben die Standardbreite, Zeilen ohne Angabe 15 pt
+  const spaltenBreite = (c: number) => spalten[c] ?? 64;
+  const zeilenHoehe = (r: number) => ((blatt.zeilenhoehen?.[r] ?? 15) * 96) / 72;
+  const verankert = bilder
+    .map(({ bild }, i) => {
+      const x = anker(bild.x, spaltenBreite);
+      const y = anker(bild.y, zeilenHoehe);
+      const cx = Math.round(bild.breite * EMU);
+      const cy = Math.round(bild.hoehe * EMU);
+      const name = xmlText(bild.name ?? `Bild ${i + 1}`);
+      return `<xdr:oneCellAnchor><xdr:from><xdr:col>${x.index}</xdr:col><xdr:colOff>${Math.round(x.versatz * EMU)}</xdr:colOff><xdr:row>${
+        y.index
+      }</xdr:row><xdr:rowOff>${Math.round(y.versatz * EMU)}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${
+        i + 2
+      }" name="${name}" descr="${name}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${
+        i + 1
+      }"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+    })
+    .join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${BEZIEHUNGEN_NS}">${verankert}</xdr:wsDr>`;
+}
+
+/** Beziehungen als XML. */
+function beziehungenXml(eintraege: { id: string; typ: string; ziel: string }[]): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${eintraege.map((e) => `<Relationship Id="${e.id}" Type="${BEZIEHUNGEN_NS}/${e.typ}" Target="${e.ziel}"/>`).join('\n')}
+</Relationships>`;
 }
 
 /** Erzeugt eine Arbeitsmappe mit einem Blatt je Eintrag. */
 export function xlsxErzeugen(blaetter: Blatt[]): Blob {
   const namen = blaetter.map((b, i) => blattName(b.name, i));
+  // Bilder je Blatt (nur PNG und JPEG); jedes Blatt mit Bildern erhält eine Zeichnung
+  let bildNummer = 0;
+  let zeichnungNummer = 0;
+  const zeichnungen = blaetter.map((b) => {
+    const bilder: MedienBild[] = [];
+    for (const bild of b.bilder ?? []) {
+      const art = bildArt(bild.daten);
+      if (!art || !(bild.breite > 0) || !(bild.hoehe > 0)) continue;
+      bilder.push({ bild, art, datei: `image${++bildNummer}.${art === 'png' ? 'png' : 'jpeg'}` });
+    }
+    return bilder.length ? { nummer: ++zeichnungNummer, bilder } : null;
+  });
   // Erst die Blätter, dabei entstehen die Zellformate
   const formate = new Formate();
-  const blattDateien = blaetter.map((b, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, inhalt: blattXml(b, formate) }));
+  const blattDateien = blaetter.map((b, i) => ({
+    name: `xl/worksheets/sheet${i + 1}.xml`,
+    inhalt: blattXml(b, formate, zeichnungen[i] ? 'rId1' : undefined),
+  }));
+  const zeichnungDateien: ZipDatei[] = blaetter.flatMap((b, i) => {
+    const z = zeichnungen[i];
+    if (!z) return [];
+    return [
+      {
+        name: `xl/worksheets/_rels/sheet${i + 1}.xml.rels`,
+        inhalt: beziehungenXml([{ id: 'rId1', typ: 'drawing', ziel: `../drawings/drawing${z.nummer}.xml` }]),
+      },
+      { name: `xl/drawings/drawing${z.nummer}.xml`, inhalt: zeichnungXml(b, z.bilder) },
+      {
+        name: `xl/drawings/_rels/drawing${z.nummer}.xml.rels`,
+        inhalt: beziehungenXml(z.bilder.map((m, k) => ({ id: `rId${k + 1}`, typ: 'image', ziel: `../media/${m.datei}` }))),
+      },
+      ...z.bilder.map((m) => ({ name: `xl/media/${m.datei}`, inhalt: m.bild.daten })),
+    ];
+  });
+  const arten = new Set(zeichnungen.flatMap((z) => z?.bilder.map((m) => m.art) ?? []));
+  const medienTypen = [
+    arten.has('png') ? '<Default Extension="png" ContentType="image/png"/>\n' : '',
+    arten.has('jpeg') ? '<Default Extension="jpeg" ContentType="image/jpeg"/>\n' : '',
+  ].join('');
+  const zeichnungTypen = zeichnungen
+    .filter((z): z is NonNullable<typeof z> => !!z)
+    .map((z) => `\n<Override PartName="/xl/drawings/drawing${z.nummer}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`)
+    .join('');
   // Druckbereiche und wiederholte Zeilen stehen als benannte Bereiche in der Mappe
   const namenXml = blaetter
     .flatMap((b, i) => [
@@ -426,16 +608,16 @@ export function xlsxErzeugen(blaetter: Blatt[]): Blob {
     .join('');
   const mitFormeln = blaetter.some((b) => b.zeilen.some((z) => z.some((zelle) => istFormatiert(zelle) && !!zelle.formel)));
 
-  const dateien = [
+  const dateien: ZipDatei[] = [
     {
       name: '[Content_Types].xml',
       inhalt: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+${medienTypen}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-${blaetter.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
+${blaetter.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}${zeichnungTypen}
 </Types>`,
     },
     {
@@ -464,6 +646,7 @@ ${blaetter.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.op
     },
     { name: 'xl/styles.xml', inhalt: formate.xml() },
     ...blattDateien,
+    ...zeichnungDateien,
   ];
 
   return schreibeZip(dateien);

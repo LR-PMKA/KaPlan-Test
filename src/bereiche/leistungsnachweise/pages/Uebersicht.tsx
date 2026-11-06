@@ -1,12 +1,16 @@
 /**
- * Startseite des Bereichs: Kennzahlen, die Leistungsnachweise in Bearbeitung,
- * Leistungen ohne Nachweis und die Projekte mit ihren Stunden im laufenden
- * Monat. Angezeigt werden die markierten Projekte; ohne Markierung alle.
+ * Startseite des Bereichs: Kennzahlen (darunter „Meine Stunden“ der
+ * angemeldeten Person im laufenden Monat), die Leistungsnachweise in
+ * Bearbeitung, Leistungen ohne Nachweis und die Projekte mit ihren Stunden im
+ * laufenden Monat. Angezeigt werden die markierten Projekte; ohne Markierung
+ * alle. Ohne Anmeldung steht darüber der Hinweis „Bitte melden Sie sich an …“
+ * (App.tsx, `AnmeldeHinweis`).
  */
 import { formatDate, today } from '../../../shared/dates';
 import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Card, CardHeader, EmptyState, Stat } from '../../../shared/ui';
+import { useAnmeldung } from '../components/AnmeldeDialog';
 import { NachweisStatusBadge, RasterBadge, anzahl, nachweiseAngelegtText } from '../components/common';
 import {
   bearbeiterVon,
@@ -17,6 +21,7 @@ import {
   summeStunden,
   zeilenFuerAnzeige,
 } from '../domain/nachweis';
+import { angemeldet, eigeneLeistungen } from '../domain/rechte';
 import { projektKurzname, type Projekt } from '../domain/types';
 import { MONATSNAMEN, monatsanfang, monatsende, stundenText, zeitraumText } from '../domain/zeitraum';
 import type { Route } from '../lib/router';
@@ -31,6 +36,8 @@ export function sichtbareProjekte(projekte: Projekt[]): Projekt[] {
 export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => void; onImport: () => void }) {
   const { data, nachweiseFuerOffeneLeistungen } = useStore();
   const toast = useToast();
+  const anmeldung = useAnmeldung();
+  const ich = angemeldet(data);
 
   const projekte = sichtbareProjekte(data.projekte);
   const ids = new Set(projekte.map((p) => p.id));
@@ -40,6 +47,11 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
   const monat = MONATSNAMEN[Number(heute.slice(5, 7)) - 1];
 
   const imMonat = data.leistungen.filter((l) => ids.has(l.projektId) && l.datum >= anfang && l.datum <= ende);
+  // Meine Stunden: alle eigenen Leistungen des Monats, auch in nicht markierten Projekten
+  const meineImMonat = eigeneLeistungen(
+    data,
+    data.leistungen.filter((l) => l.datum >= anfang && l.datum <= ende),
+  );
   const offen = leistungenOhneNachweis(data).filter((l) => ids.has(l.projektId));
   const inBearbeitung = projekte.flatMap((p) => nachweiseVon(data, p.id).filter((n) => n.status === 'entwurf'));
   const alleMarkiert = data.projekte.filter((p) => p.markiert).length;
@@ -49,8 +61,8 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
     <div className="stack">
       <div className="row-between wrap">
         <p className="small muted" style={{ maxWidth: 620 }}>
-          Leistungen aus der Zeiterfassung übernehmen – ein Import kann mehrere Projekte enthalten und ergänzt nur die
-          Leistungen der Personen in der Datei.
+          Eigene Leistungen aus der Zeiterfassung übernehmen – ein Import kann mehrere Projekte enthalten; übernommen
+          werden nur die eigenen Zeilen der Datei.
         </p>
         <button type="button" className="btn btn-primary" onClick={onImport}>
           <Icon name="importieren" size={14} /> Excel-Import
@@ -63,7 +75,11 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
           label="Aktive Projekte"
           onClick={() => navigate({ view: 'projekte' })}
         />
-        <Stat wert={stundenText(stundenVon(imMonat))} label={`Stunden ${monat}`} ton="blue" />
+        <Stat
+          wert={ich ? stundenText(stundenVon(meineImMonat)) : '–'}
+          label={`Meine Stunden ${monat}`}
+          ton={ich ? 'blue' : ''}
+        />
         <Stat wert={inBearbeitung.length} label="In Bearbeitung" />
         <Stat wert={offen.length} label="Ohne Nachweis" ton={offen.length > 0 ? 'orange' : ''} />
       </div>
@@ -196,7 +212,9 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                             className="btn btn-sm btn-outline"
                             onClick={(e) => {
                               e.stopPropagation();
-                              toast(nachweiseAngelegtText(nachweiseFuerOffeneLeistungen(projekt.id)));
+                              // Ohne Anmeldung erst anmelden – danach den Knopf erneut wählen
+                              if (ich) toast(nachweiseAngelegtText(nachweiseFuerOffeneLeistungen(projekt.id)));
+                              else anmeldung();
                             }}
                           >
                             <Icon name="plus" size={13} /> Nachweise anlegen
@@ -225,7 +243,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
               <thead>
                 <tr>
                   <th>Projekt</th>
-                  <th>Raster</th>
+                  <th className="ln-spalte-weit">Raster</th>
                   <th className="col-optional ln-spalte-weit">Leistungsbereich</th>
                   <th className="zahl">Stunden {monat}</th>
                   <th className="col-optional">Letzter Nachweis</th>
@@ -249,7 +267,7 @@ export function Uebersicht({ navigate, onImport }: { navigate: (r: Route) => voi
                           <strong>{projekt.name}</strong>
                         </div>
                       </td>
-                      <td>
+                      <td className="ln-spalte-weit">
                         <RasterBadge raster={projekt.raster} />
                       </td>
                       <td className="small muted col-optional ln-spalte-weit">{projekt.leistungsbereich || '–'}</td>

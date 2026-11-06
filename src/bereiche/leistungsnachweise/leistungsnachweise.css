@@ -21,8 +21,40 @@
 .table th.ln-stunden, .table td.ln-stunden { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .table td.ln-stunden { font-weight: 600; }
 
-/* „erfasst als …“ unter dem Namen in der Seitenleiste */
-.bearbeiter .ln-erfasst-als { display: block; font-size: 11px; color: var(--text-tertiary); }
+/* Anmeldung im Fuß der Seitenleiste: „Angemeldet als“, Name, Badge „Controlling“ bzw. „Nicht angemeldet“ */
+.bearbeiter.ln-anmeldung { align-items: flex-start; }
+.bearbeiter.ln-anmeldung .avatar { margin-top: 2px; font-size: 10.5px; }
+.ln-anmeldung-text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.ln-anmeldung-text strong { max-width: 100%; }
+.ln-anmeldung-label { font-size: 11px; color: var(--text-tertiary); }
+.ln-anmeldung-text .badge { margin-top: 3px; padding: 1px 7px; font-size: 10.5px; }
+.bearbeiter.ln-abgemeldet { border-style: dashed; border-color: var(--separator-strong); }
+.bearbeiter.ln-abgemeldet .avatar { background: var(--gray-soft); color: var(--text-secondary); }
+
+/* Hinweise mit Knopf (row-between im Callout): Der Inhalt nimmt die ganze Breite, damit der Knopf rechts steht */
+.ln-app .callout > div:last-child { flex: 1 1 auto; min-width: 0; }
+
+/* Hinweis ohne Anmeldung oben im Inhalt */
+.ln-anmeldehinweis { margin-bottom: 18px; }
+.ln-anmeldehinweis .callout { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Anmeldedialog */
+.ln-anmeldung-dialog { gap: 14px; }
+.ln-anmeldung-rolle {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+.ln-anmeldung-rolle .checkbox { font-weight: 500; }
+.ln-anmeldung-rolle .hint { font-size: 12px; color: var(--text-tertiary); padding-left: 23px; }
+.ln-anmeldung-hinweis { margin: 0; }
+
+/* Gruppe von Feldern und Knöpfen, die sich gemeinsam sperren lässt (ohne Anmeldung, fremde
+   Leistung) – ohne eigenen Rahmen und ohne Einfluss auf die Anordnung */
+fieldset.ln-fieldset { border: 0; margin: 0; min-width: 0; }
+fieldset.ln-fieldset:not(.card-pad) { display: contents; padding: 0; }
 
 /* Hinweis nach einem Ladefehler bzw. bei einem Stand aus einer neueren Fassung –
    mit Randlinie wie die Hinweisleisten des Planlaufmanagements */
@@ -47,10 +79,4 @@
   .table-stack td.ln-stunden::after { content: ' Std.'; font-weight: 400; color: var(--text-tertiary); }
   /* Knöpfe, die auf dem Telefon entfallen, weil die ganze Karte dasselbe tut */
   .table.table-stack td.actions.ln-nur-breit { display: none; }
-  /* Mitarbeiter: Kürzel, Name, Status und Löschen in einer Zeile, darunter die Stunden */
-  .table-stack.ln-personen tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-  .table-stack.ln-personen td { width: auto; }
-  .table-stack.ln-personen td:nth-child(2) { flex: 1 1 auto; min-width: 0; }
-  .table-stack.ln-personen td.actions { order: 1; padding-top: 0; }
-  .table-stack.ln-personen td.ln-stunden { order: 2; flex-basis: 100%; }
 }

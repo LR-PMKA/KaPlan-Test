@@ -1,44 +1,49 @@
 /**
- * Einen Leistungsnachweis bearbeiten: je Tag, Woche oder Monat mit Leistungen
- * eine Zeile mit Datum, Bearbeitern, Leistungstext und Stunden (bei Projekten
- * mit Abschnitten je Abschnitt), aufklappbar die Leistungen der Zeile. Darunter
- * Summe, Stunden je Mitarbeiter (Kontrolle, nicht im Druck) und Bemerkung.
+ * Ein Leistungsnachweis zum gemeinsamen Bearbeiten: je Tag, Woche oder Monat
+ * mit Leistungen eine Zeile mit Datum, Bearbeitern, Leistungstext und den
+ * erfassten Stunden (ab zwei Abschnitten je Abschnitt, `mitAbschnittsspalten`).
+ * Je Zeile aufklappbar die eigenen Leistungen; die der anderen erscheinen nur
+ * als Zahl („+ 3 Leistungen von Kolleginnen und Kollegen“) – Stunden einzelner
+ * anderer Personen zeigt diese Ansicht nie (domain/rechte.ts). Darunter Summe
+ * und Bemerkung.
  *
  * Der Leistungstext entsteht automatisch aus den Texten der Leistungen. Wer
  * ihn bearbeitet, behält seinen Text: Kommen danach Leistungen hinzu, nennt
- * die Zeile sie und bietet „Ergänzen“ an – überschrieben wird nie still.
+ * die Zeile sie und bietet „Ergänzen“ an – überschrieben wird nie still. Text
+ * und Bemerkung bearbeitet jede angemeldete Person, solange der Nachweis offen
+ * ist.
  *
- * Abschließen schreibt den Stand fest (`nachweisAbschliessen`): Der Nachweis
- * zeigt dann, was abgegeben wurde, auch wenn sich Leistungen im Zeitraum
- * später ändern; „Wieder öffnen“ rechnet neu. Dazu Druckansicht, Drucken/PDF
- * und Excel – beide in der Form der Excel-Vorlagen (domain/druck.ts,
- * domain/export.ts).
+ * Abschließen, Aufschläge, Zeitraum ändern, Löschen, Druck und Export gehören
+ * dem Controlling (pages/controlling/Abrechnung.tsx); mit der Rolle führt
+ * „Im Controlling öffnen“ dorthin. Abgeschlossene Nachweise zeigen den
+ * festgeschriebenen Stand mit den erfassten Stunden, nur zum Lesen.
  */
 import { useState } from 'react';
-import { formatDate, toISO, today, wochentag } from '../../../../shared/dates';
+import { today, wochentag } from '../../../../shared/dates';
 import { Icon } from '../../../../shared/icons';
 import { useToast } from '../../../../shared/toast';
-import { Badge, Callout, Card, CardHeader, ConfirmDialog, EmptyState, Modal, Segmented, Stat } from '../../../../shared/ui';
-import { Druckblatt } from '../../components/Druckblatt';
+import { Badge, Callout, Card, CardHeader, ConfirmDialog, EmptyState, Stat } from '../../../../shared/ui';
+import { useMitAnmeldung } from '../../components/AnmeldeDialog';
 import { ImportDialog } from '../../components/ImportDialog';
 import { LeistungDialog } from '../../components/LeistungDialog';
-import { NachweisDialog } from '../../components/NachweisDialog';
 import { Textfeld } from '../../components/Textfeld';
-import { NachweisStatusBadge, QuelleBadge, RasterBadge, anzahl } from '../../components/common';
+import { NachweisStatusBadge, QuelleBadge, RasterBadge, anzahl, zeitpunkt } from '../../components/common';
 import {
-  GESAMT,
-  nachweisDrucken,
-  nachweisFassung,
-  nachweisHtml,
-  spaltenStunden,
-  type NachweisFassung,
-  type StundenSpalte,
-} from '../../domain/druck';
-import { nachweisExportieren } from '../../domain/export';
-import { leistungenIm, neueLeistungenSeitText, standVeraltet, textErgaenzen } from '../../domain/nachweis';
+  bearbeiterVon,
+  mitAbschnittsspalten,
+  nachweisTitel,
+  neueLeistungenSeitText,
+  standVeraltet,
+  summeStunden,
+  textErgaenzen,
+  zeilenFuerAnzeige,
+} from '../../domain/nachweis';
+import { angemeldet, istControlling, leistungenDerZeile } from '../../domain/rechte';
 import {
   OHNE_ABSCHNITT,
   mitarbeiterName,
+  projektKurzname,
+  type Abschnitt,
   type ID,
   type Leistung,
   type Leistungsnachweis,
@@ -51,8 +56,6 @@ import type { Route } from '../../lib/router';
 import { useStore } from '../../store/store';
 import '../../components/nachweis.css';
 
-type Ansicht = 'bearbeiten' | 'druck';
-
 /** Bezeichnung der Zeilen je Raster. */
 const ZEILEN_LABEL: Record<Raster, [string, string]> = {
   tag: ['Tag', 'Tage'],
@@ -60,12 +63,26 @@ const ZEILEN_LABEL: Record<Raster, [string, string]> = {
   monat: ['Monat', 'Monate'],
 };
 
-/** „am 23.10.2026 um 14:05 Uhr“ in Ortszeit. */
-function zeitpunkt(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `am ${formatDate(toISO(d))} um ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`;
+/** Eine Stundenspalte des Nachweises: ein Abschnitt oder „ohne“. */
+interface Spalte {
+  schluessel: string;
+  kurz: string;
+  name: string;
+}
+
+/**
+ * Stundenspalten ab zwei Abschnitten (wie die Vorlage Woche.xlsx): je
+ * Abschnitt eine, dazu „ohne“, wenn Leistungen ohne Abschnitt in den Zeilen
+ * stehen. Mit einem oder keinem Abschnitt keine – dann zählt nur die Summe.
+ * Gerechnet mit den erfassten Stunden (`stundenJeAbschnitt`).
+ */
+function stundenSpalten(abschnitte: Abschnitt[], zeilen: NachweisZeile[]): Spalte[] {
+  if (!mitAbschnittsspalten(abschnitte)) return [];
+  const spalten: Spalte[] = abschnitte.map((a) => ({ schluessel: a.id, kurz: a.kurz || a.kennung || a.name, name: a.name }));
+  if (zeilen.some((z) => (z.stundenJeAbschnitt[OHNE_ABSCHNITT] ?? 0) !== 0)) {
+    spalten.push({ schluessel: OHNE_ABSCHNITT, kurz: 'ohne', name: 'Leistungen ohne Abschnitt' });
+  }
+  return spalten;
 }
 
 export function NachweisEditor({
@@ -77,31 +94,38 @@ export function NachweisEditor({
   nachweis: Leistungsnachweis;
   navigate: (r: Route) => void;
 }) {
-  const { data, updateNachweis, zeilenTextSetzen, nachweisAbschliessen, nachweisOeffnen, deleteNachweis, deleteLeistung } =
-    useStore();
+  const { data, updateNachweis, zeilenTextSetzen, deleteLeistung } = useStore();
   const toast = useToast();
-  const [ansicht, setAnsicht] = useState<Ansicht>('bearbeiten');
+  const mitAnmeldung = useMitAnmeldung();
   const [offen, setOffen] = useState<Set<string>>(new Set());
   const [leistungDialog, setLeistungDialog] = useState<{ leistung?: Leistung } | null>(null);
   const [leistungLoeschen, setLeistungLoeschen] = useState<Leistung | null>(null);
-  const [zeitraumDialog, setZeitraumDialog] = useState(false);
-  const [abschliessen, setAbschliessen] = useState(false);
-  const [loeschen, setLoeschen] = useState(false);
   const [importOffen, setImportOffen] = useState(false);
 
+  const ich = angemeldet(data);
+  const controlling = istControlling(data);
   const abgeschlossen = n.status === 'abgeschlossen';
-  const fassung = nachweisFassung(data, n, projekt);
-  const { zeilen, spalten } = fassung;
+  // Gemeinsam bearbeiten: jede angemeldete Person, solange der Nachweis offen ist
+  const bearbeitbar = !abgeschlossen && !!ich;
+  const stand = abgeschlossen ? n.stand : null;
+  const zeilen = zeilenFuerAnzeige(data, n);
+  const spalten = stundenSpalten(stand ? stand.abschnitte : projekt.abschnitte, zeilen);
+  const summe = summeStunden(zeilen);
+  const summen = Object.fromEntries(
+    spalten.map((s) => [s.schluessel, runden(zeilen.reduce((t, z) => t + (z.stundenJeAbschnitt[s.schluessel] ?? 0), 0))]),
+  );
+  const bearbeiter = bearbeiterVon(zeilen);
+  const meineStunden = ich ? runden(zeilen.reduce((t, z) => t + (z.stundenJeMitarbeiter[ich.id] ?? 0), 0)) : 0;
+  const titel = stand?.titel ?? nachweisTitel(n);
+  const kopfProjekt = stand ? stand.projekt : projekt;
+  const leistungsbereich = kopfProjekt.leistungsbereich;
   const veraltet = standVeraltet(data, n);
-  const imZeitraumLive = leistungenIm(data, projekt.id, n.von, n.bis);
-  const leistungVon = new Map(data.leistungen.map((l) => [l.id, l]));
   const mitarbeiterVon = new Map(data.mitarbeiter.map((m) => [m.id, m]));
   const abschnittVon = new Map(projekt.abschnitte.map((a) => [a.id, a]));
   const anzahlLeistungen = zeilen.reduce((s, z) => s + z.leistungIds.length, 0);
   const heute = today();
   const vorgabeDatum = imZeitraum(heute, n.von, n.bis) ? heute : heute > n.bis ? n.bis : n.von;
-  const neueJeZeile = new Map(zeilen.map((z) => [z.schluessel, abgeschlossen ? [] : neueLeistungenSeitText(data, n, z)]));
-  const zeilenMitNeuen = [...neueJeZeile.values()].filter((l) => l.length > 0).length;
+  const neueJeZeile = new Map(zeilen.map((z) => [z.schluessel, bearbeitbar ? neueLeistungenSeitText(data, n, z) : []]));
 
   const personName = (id: ID) => {
     const m = mitarbeiterVon.get(id);
@@ -131,14 +155,11 @@ export function NachweisEditor({
     });
 
   const zurueck = () => navigate({ view: 'projekt', projektId: projekt.id, tab: 'nachweise' });
+  const erfassen = () => mitAnmeldung(() => setLeistungDialog({}));
+  const importieren = () => mitAnmeldung(() => setImportOffen(true));
 
-  const wiederOeffnen = () => {
-    nachweisOeffnen(n.id);
-    toast('Leistungsnachweis wieder geöffnet – er zeigt die aktuellen Leistungen.');
-  };
-
-  const erfassenKnopf = (klasse = 'btn btn-outline') => (
-    <button type="button" className={klasse} onClick={() => setLeistungDialog({})}>
+  const erfassenKnopf = (klasse: string) => (
+    <button type="button" className={klasse} onClick={erfassen}>
       <Icon name="plus" size={14} /> Leistung erfassen
     </button>
   );
@@ -151,176 +172,146 @@ export function NachweisEditor({
           <button type="button" className="btn btn-ghost" onClick={zurueck}>
             <Icon name="zurueck" size={14} /> Leistungsnachweise
           </button>
-          <Segmented<Ansicht>
-            value={ansicht}
-            onChange={setAnsicht}
-            options={[
-              { value: 'bearbeiten', label: 'Bearbeiten' },
-              { value: 'druck', label: 'Druckansicht' },
-            ]}
-          />
         </div>
         <div className="row">
-          {erfassenKnopf()}
-          <button
-            type="button"
-            className="btn btn-outline"
-            disabled={abgeschlossen}
-            title={abgeschlossen ? 'Erst „Wieder öffnen“ – der Stand ist festgeschrieben.' : 'Zeitraum, Raster und Überschrift ändern'}
-            onClick={() => setZeitraumDialog(true)}
-          >
-            <Icon name="kalender" size={14} /> Zeitraum ändern
-          </button>
-          <button type="button" className="btn btn-outline" onClick={() => nachweisDrucken(data, n, projekt)}>
-            <Icon name="plan" size={14} /> Drucken / PDF
-          </button>
-          <button type="button" className="btn btn-outline" onClick={() => nachweisExportieren(data, n, projekt)}>
-            <Icon name="export" size={14} /> Excel
-          </button>
-          {abgeschlossen ? (
-            <button type="button" className="btn btn-primary" onClick={wiederOeffnen}>
-              <Icon name="schleife" size={14} /> Wieder öffnen
+          {!abgeschlossen ? erfassenKnopf('btn btn-primary') : null}
+          {controlling ? (
+            <button
+              type="button"
+              className="btn btn-outline"
+              title="Abrechnung: Aufschläge, Abschließen, Drucken / PDF und Excel"
+              onClick={() => navigate({ view: 'abrechnung', projektId: projekt.id, nachweisId: n.id })}
+            >
+              <Icon name="aufgabe" size={14} /> Im Controlling öffnen
             </button>
-          ) : (
-            <button type="button" className="btn btn-primary" onClick={() => setAbschliessen(true)}>
-              <Icon name="check" size={14} /> Abschließen
-            </button>
-          )}
-          <button type="button" className="btn btn-danger" onClick={() => setLoeschen(true)}>
-            <Icon name="loeschen" size={14} /> Löschen
-          </button>
+          ) : null}
         </div>
       </div>
 
-      {ansicht === 'druck' ? (
-        <Druckblatt inhalt={nachweisHtml(data, n, projekt)} />
+      {/* Kopf: Überschrift, Zeitraum, Raster, Status */}
+      <Card>
+        <CardHeader
+          titel={titel}
+          sub={`${langDatum(n.von)} – ${langDatum(n.bis)} · ${projektKurzname(kopfProjekt)}${
+            leistungsbereich ? ` · ${leistungsbereich}` : ''
+          } · zuletzt geändert ${zeitpunkt(n.geaendert)}`}
+          actions={
+            <span className="row wrap" style={{ gap: 6 }}>
+              <RasterBadge raster={n.raster} />
+              <NachweisStatusBadge status={n.status} />
+              {veraltet ? <Badge ton="orange">geändert</Badge> : null}
+            </span>
+          }
+        />
+        <div className="kennzahlen">
+          <Stat wert={stundenText(summe)} label="Stunden erfasst" />
+          {ich ? <Stat wert={stundenText(meineStunden)} label="Meine Stunden" ton={meineStunden ? 'blue' : ''} /> : null}
+          <Stat wert={anzahlLeistungen} label={anzahlLeistungen === 1 ? 'Leistung' : 'Leistungen'} />
+          <Stat wert={zeilen.length} label={ZEILEN_LABEL[n.raster][zeilen.length === 1 ? 0 : 1]} />
+          <Stat wert={bearbeiter.length} label="Bearbeiter" />
+        </div>
+      </Card>
+
+      {abgeschlossen ? (
+        <Callout icon="✓">Abgeschlossen {zeitpunkt(n.abgeschlossen)} – Änderungen nur über das Controlling.</Callout>
       ) : (
-        <>
-          {/* Kopf: Überschrift, Zeitraum, Raster, Status */}
-          <Card>
-            <CardHeader
-              titel={fassung.titel}
-              sub={`${langDatum(n.von)} – ${langDatum(n.bis)} · ${fassung.projektName}${
-                fassung.leistungsbereich ? ` · ${fassung.leistungsbereich}` : ''
-              } · zuletzt geändert ${zeitpunkt(n.geaendert)}`}
-              actions={
-                <span className="row wrap" style={{ gap: 6 }}>
-                  <RasterBadge raster={n.raster} />
-                  <NachweisStatusBadge status={n.status} />
-                  {veraltet ? <Badge ton="orange">geändert</Badge> : null}
-                </span>
-              }
-            />
-            <div className="kennzahlen">
-              <Stat wert={stundenText(fassung.summe)} label="Stunden" />
-              <Stat wert={anzahlLeistungen} label={anzahlLeistungen === 1 ? 'Leistung' : 'Leistungen'} />
-              <Stat wert={zeilen.length} label={ZEILEN_LABEL[n.raster][zeilen.length === 1 ? 0 : 1]} />
-              <Stat wert={fassung.bearbeiter.length} label="Bearbeiter" />
-            </div>
-          </Card>
-
-          {abgeschlossen ? (
-            <Callout icon="✓">
-              Abgeschlossen {zeitpunkt(n.abgeschlossen)} – der Stand ist festgeschrieben. Spätere Leistungen im Zeitraum
-              ändern ihn nicht mehr.
-            </Callout>
-          ) : null}
-          {veraltet ? (
-            <Callout ton="warn" icon="!">
-              Seit dem Abschluss haben sich Leistungen im Zeitraum geändert – „Wieder öffnen“ übernimmt sie.
-            </Callout>
-          ) : null}
-
-          {zeilen.length === 0 ? (
-            <Card>
-              <EmptyState
-                icon="stunden"
-                titel="Noch keine Leistungen im Zeitraum"
-                text={
-                  abgeschlossen
-                    ? 'Der Leistungsnachweis wurde ohne Leistungen abgeschlossen.'
-                    : `Erfassen Sie Leistungen von Hand oder übernehmen Sie sie per Excel-Import aus der Zeiterfassung – sie erscheinen hier je ${ZEILEN_LABEL[n.raster][0]}, gemeinsam für alle Mitarbeiter.`
-                }
-                action={
-                  abgeschlossen ? undefined : (
-                    <div className="row wrap" style={{ justifyContent: 'center' }}>
-                      {erfassenKnopf('btn btn-primary')}
-                      <button type="button" className="btn btn-outline" onClick={() => setImportOffen(true)}>
-                        <Icon name="importieren" size={14} /> Excel-Import
-                      </button>
-                    </div>
-                  )
-                }
-              />
-            </Card>
-          ) : (
-            <div className="stack ln-zeilen">
-              {zeilen.map((z) => (
-                <ZeileKarte
-                  key={z.schluessel}
-                  zeile={z}
-                  spalten={spalten}
-                  lesen={abgeschlossen}
-                  leistungen={z.leistungIds.map((id) => leistungVon.get(id)).filter((l): l is Leistung => !!l)}
-                  neue={neueJeZeile.get(z.schluessel) ?? []}
-                  offen={offen.has(z.schluessel)}
-                  mitAbschnitt={projekt.abschnitte.length > 0}
-                  personName={personName}
-                  abschnittName={(id) => {
-                    const a = id ? abschnittVon.get(id) : undefined;
-                    return a ? a.kurz || a.name : '';
-                  }}
-                  onUmschalten={() => umschalten(z.schluessel)}
-                  onText={(text) => textAendern(z, text)}
-                  onErgaenzen={(neue) => ergaenzen(z, neue)}
-                  onBeibehalten={() => beibehalten(z)}
-                  onAutomatisch={() => automatisch(z)}
-                  onBearbeiten={(leistung) => setLeistungDialog({ leistung })}
-                  onLoeschen={setLeistungLoeschen}
-                />
-              ))}
-
-              {/* Summe */}
-              <div className="card ln-summe">
-                <span className="ln-summe-label">Summe</span>
-                {spalten.length ? (
-                  <span className="ln-summe-abschnitte">
-                    {spalten
-                      .filter((s) => s.schluessel !== GESAMT)
-                      .map((s) => (
-                        <span key={s.schluessel} title={s.name}>
-                          {s.kurz} <b>{stundenText(fassung.summen[s.schluessel] ?? 0)}</b>
-                        </span>
-                      ))}
-                  </span>
-                ) : null}
-                <strong className="ln-summe-wert">{stundenText(fassung.summe)} Std.</strong>
-              </div>
-            </div>
-          )}
-
-          {fassung.mitarbeiter.length > 0 ? (
-            <StundenJeMitarbeiter
-              fassung={fassung}
-              leistungen={abgeschlossen ? null : imZeitraumLive}
-              abschnittIds={new Set(projekt.abschnitte.map((a) => a.id))}
-            />
-          ) : null}
-
-          <Card>
-            <CardHeader titel="Bemerkung" sub="Steht im Druck unter der Tabelle" />
-            <div className="card-pad">
-              <Textfeld
-                value={n.bemerkung}
-                onChange={(v) => updateNachweis(n.id, { bemerkung: v })}
-                readOnly={abgeschlossen}
-                placeholder={abgeschlossen ? 'Keine Bemerkung' : 'z. B. Abrechnung nach Aufwand gemäß Vertrag'}
-                aria-label="Bemerkung"
-              />
-            </div>
-          </Card>
-        </>
+        <p className="small tertiary ln-gemeinsam">
+          Gemeinsamer Nachweis: Jede Person erfasst ihre eigenen Leistungen; Leistungstext und Bemerkung bearbeiten alle
+          gemeinsam. Abschließen und Abrechnen übernimmt das Controlling.
+        </p>
       )}
+      {veraltet ? (
+        <Callout ton="warn" icon="!">
+          Seit dem Abschluss haben sich Leistungen im Zeitraum geändert – sie erscheinen erst, wenn das Controlling den
+          Leistungsnachweis wieder öffnet.
+        </Callout>
+      ) : null}
+
+      {zeilen.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="stunden"
+            titel="Noch keine Leistungen im Zeitraum"
+            text={
+              abgeschlossen
+                ? 'Der Leistungsnachweis wurde ohne Leistungen abgeschlossen.'
+                : `Eigene Leistungen lassen sich von Hand erfassen oder per Excel-Import aus der Zeiterfassung übernehmen – sie erscheinen hier je ${ZEILEN_LABEL[n.raster][0]}, gemeinsam mit denen der Kolleginnen und Kollegen.`
+            }
+            action={
+              abgeschlossen ? undefined : (
+                <div className="row wrap" style={{ justifyContent: 'center' }}>
+                  {erfassenKnopf('btn btn-primary')}
+                  <button type="button" className="btn btn-outline" onClick={importieren}>
+                    <Icon name="importieren" size={14} /> Excel-Import
+                  </button>
+                </div>
+              )
+            }
+          />
+        </Card>
+      ) : (
+        <div className="stack ln-zeilen">
+          {zeilen.map((z) => {
+            const { eigene, andereAnzahl } = leistungenDerZeile(data, z);
+            return (
+              <ZeileKarte
+                key={z.schluessel}
+                zeile={z}
+                spalten={spalten}
+                bearbeitbar={bearbeitbar}
+                angemeldet={!!ich}
+                eigene={eigene}
+                andereAnzahl={andereAnzahl}
+                neue={neueJeZeile.get(z.schluessel) ?? []}
+                offen={offen.has(z.schluessel)}
+                mitAbschnitt={projekt.abschnitte.length > 0}
+                personName={personName}
+                abschnittName={(id) => {
+                  const a = id ? abschnittVon.get(id) : undefined;
+                  return a ? a.kurz || a.name : '';
+                }}
+                onUmschalten={() => umschalten(z.schluessel)}
+                onText={(text) => textAendern(z, text)}
+                onErgaenzen={(neue) => ergaenzen(z, neue)}
+                onBeibehalten={() => beibehalten(z)}
+                onAutomatisch={() => automatisch(z)}
+                onBearbeiten={(leistung) => setLeistungDialog({ leistung })}
+                onLoeschen={setLeistungLoeschen}
+              />
+            );
+          })}
+
+          {/* Summe der erfassten Stunden */}
+          <div className="card ln-summe">
+            <span className="ln-summe-label">Summe</span>
+            {spalten.length ? (
+              <span className="ln-summe-abschnitte">
+                {spalten.map((s) => (
+                  <span key={s.schluessel} title={s.name}>
+                    {s.kurz} <b>{stundenText(summen[s.schluessel] ?? 0)}</b>
+                  </span>
+                ))}
+              </span>
+            ) : null}
+            <strong className="ln-summe-wert">{stundenText(summe)} Std.</strong>
+          </div>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader titel="Bemerkung" sub="Steht im Druck unter der Tabelle – gemeinsam für alle" />
+        <div className="card-pad">
+          <Textfeld
+            value={n.bemerkung}
+            onChange={(v) => updateNachweis(n.id, { bemerkung: v })}
+            readOnly={!bearbeitbar}
+            placeholder={
+              abgeschlossen ? 'Keine Bemerkung' : ich ? 'z. B. Abrechnung nach Aufwand gemäß Vertrag' : 'Zum Bearbeiten bitte anmelden'
+            }
+            aria-label="Bemerkung"
+          />
+        </div>
+      </Card>
 
       {leistungDialog ? (
         <LeistungDialog
@@ -331,51 +322,14 @@ export function NachweisEditor({
         />
       ) : null}
 
-      {zeitraumDialog ? <NachweisDialog projekt={projekt} nachweis={n} onClose={() => setZeitraumDialog(false)} /> : null}
-
       {importOffen ? <ImportDialog onClose={() => setImportOffen(false)} navigate={navigate} /> : null}
-
-      {abschliessen ? (
-        <ConfirmDialog
-          titel="Leistungsnachweis abschließen?"
-          text={`Der Stand wird festgeschrieben; spätere Leistungen im Zeitraum ändern ihn nicht mehr. „Wieder öffnen“ hebt den Abschluss auf.${
-            zeilenMitNeuen
-              ? ` Achtung: In ${anzahl(zeilenMitNeuen, 'Zeile', 'Zeilen')} fehlen neue Leistungen noch im bearbeiteten Text.`
-              : ''
-          }`}
-          bestaetigenLabel="Abschließen"
-          ton="blau"
-          onConfirm={() => {
-            nachweisAbschliessen(n.id);
-            toast('Leistungsnachweis abgeschlossen.');
-          }}
-          onClose={() => setAbschliessen(false)}
-        />
-      ) : null}
-
-      {loeschen ? (
-        <NachweisLoeschen
-          titel={fassung.titel}
-          leistungen={imZeitraumLive.length}
-          onClose={() => setLoeschen(false)}
-          onLoeschen={(mitLeistungen) => {
-            deleteNachweis(n.id, mitLeistungen);
-            toast(
-              mitLeistungen && imZeitraumLive.length
-                ? `Leistungsnachweis und ${anzahl(imZeitraumLive.length, 'Leistung', 'Leistungen')} gelöscht.`
-                : 'Leistungsnachweis gelöscht.',
-            );
-            zurueck();
-          }}
-        />
-      ) : null}
 
       {leistungLoeschen ? (
         <ConfirmDialog
           titel="Leistung löschen?"
-          text={`${wochentag(leistungLoeschen.datum)} ${kurzDatum(leistungLoeschen.datum)} · ${personName(
-            leistungLoeschen.mitarbeiterId,
-          )} · ${stundenText(leistungLoeschen.stunden)} Std. – „${leistungLoeschen.text}“ wird endgültig gelöscht.`}
+          text={`${wochentag(leistungLoeschen.datum)} ${kurzDatum(leistungLoeschen.datum)} · ${stundenText(
+            leistungLoeschen.stunden,
+          )} Std. – „${leistungLoeschen.text}“ wird endgültig gelöscht.`}
           onConfirm={() => {
             deleteLeistung(leistungLoeschen.id);
             toast('Leistung gelöscht.');
@@ -394,8 +348,10 @@ export function NachweisEditor({
 function ZeileKarte({
   zeile: z,
   spalten,
-  lesen,
-  leistungen,
+  bearbeitbar,
+  angemeldet,
+  eigene,
+  andereAnzahl,
   neue,
   offen,
   mitAbschnitt,
@@ -410,10 +366,14 @@ function ZeileKarte({
   onLoeschen,
 }: {
   zeile: NachweisZeile;
-  spalten: StundenSpalte[];
-  /** Abgeschlossen: nur lesen. */
-  lesen: boolean;
-  leistungen: Leistung[];
+  spalten: Spalte[];
+  /** Offen und angemeldet: Text und eigene Leistungen lassen sich bearbeiten. */
+  bearbeitbar: boolean;
+  angemeldet: boolean;
+  /** Eigene Leistungen der Zeile. */
+  eigene: Leistung[];
+  /** Zahl der Leistungen anderer in der Zeile – einzeln erscheinen sie hier nicht. */
+  andereAnzahl: number;
   /** Leistungen, die nach der Textbearbeitung hinzukamen. */
   neue: Leistung[];
   offen: boolean;
@@ -428,8 +388,15 @@ function ZeileKarte({
   onBearbeiten: (l: Leistung) => void;
   onLoeschen: (l: Leistung) => void;
 }) {
-  const abschnitte = spalten.filter((s) => s.schluessel !== GESAMT && spaltenStunden(z, s.schluessel) !== 0);
+  const abschnitte = spalten.filter((s) => (z.stundenJeAbschnitt[s.schluessel] ?? 0) !== 0);
   const tabellenId = `ln-zeile-${z.schluessel}`;
+  // Ohne Anmeldung gibt es keine „Kolleginnen und Kollegen“ – dann nur die Zahl
+  const andereText =
+    andereAnzahl === 0
+      ? ''
+      : angemeldet
+        ? `+ ${anzahl(andereAnzahl, 'Leistung', 'Leistungen')} von Kolleginnen und Kollegen`
+        : anzahl(andereAnzahl, 'Leistung', 'Leistungen');
 
   return (
     <div className={`card ln-zeile ${z.textBearbeitet ? 'ln-zeile-bearbeitet' : ''}`}>
@@ -441,9 +408,7 @@ function ZeileKarte({
           ))}
         </div>
         <div className="ln-zeile-text">
-          {lesen ? (
-            <div className="ln-zeile-lesetext">{z.text || <span className="tertiary">ohne Leistungstext</span>}</div>
-          ) : (
+          {bearbeitbar ? (
             <>
               <Textfeld value={z.text} onChange={onText} aria-label={`Leistungstext ${z.datumText.replace('\n', ' ')}`} />
               <div className="ln-zeile-hinweis">
@@ -459,6 +424,8 @@ function ZeileKarte({
                 )}
               </div>
             </>
+          ) : (
+            <div className="ln-zeile-lesetext">{z.text || <span className="tertiary">ohne Leistungstext</span>}</div>
           )}
           {neue.length > 0 ? (
             <div className="ln-zeile-neu">
@@ -497,7 +464,7 @@ function ZeileKarte({
               {abschnitte.map((s) => (
                 <span key={s.schluessel} title={s.name}>
                   <span>{s.kurz}</span>
-                  <b>{stundenText(spaltenStunden(z, s.schluessel))}</b>
+                  <b>{stundenText(z.stundenJeAbschnitt[s.schluessel] ?? 0)}</b>
                 </span>
               ))}
             </div>
@@ -506,212 +473,75 @@ function ZeileKarte({
       </div>
 
       <div className="ln-zeile-fuss">
-        <button type="button" className="ln-zeile-aufklappen" aria-expanded={offen} aria-controls={offen ? tabellenId : undefined} onClick={onUmschalten}>
-          <Icon name={offen ? 'runter' : 'chevron'} size={12} /> Leistungen ({leistungen.length})
-        </button>
+        {eigene.length > 0 ? (
+          <button
+            type="button"
+            className="ln-zeile-aufklappen"
+            aria-expanded={offen}
+            aria-controls={offen ? tabellenId : undefined}
+            onClick={onUmschalten}
+          >
+            <Icon name={offen ? 'runter' : 'chevron'} size={12} /> Meine Leistungen ({eigene.length})
+          </button>
+        ) : angemeldet ? (
+          <span className="ln-zeile-keine">Keine eigenen Leistungen</span>
+        ) : null}
+        {andereText ? <span className="ln-zeile-andere">{andereText}</span> : null}
       </div>
 
-      {offen ? (
+      {offen && eigene.length > 0 ? (
         <div className="table-scroll ln-zeile-leistungen" id={tabellenId}>
           <table className="table table-stack">
             <thead>
               <tr>
                 <th>Datum</th>
-                <th>Mitarbeiter</th>
                 <th>Leistungstext</th>
                 {mitAbschnitt ? <th className="col-optional">Abschnitt</th> : null}
                 <th className="ln-stunden">Stunden</th>
                 <th className="col-optional">Quelle</th>
-                <th className="actions" />
+                {bearbeitbar ? <th className="actions" /> : null}
               </tr>
             </thead>
             <tbody>
-              {leistungen.map((l) => (
+              {eigene.map((l) => (
                 <tr key={l.id}>
                   <td className="num">
                     {wochentag(l.datum)} {kurzDatum(l.datum)}
                   </td>
-                  <td>{personName(l.mitarbeiterId)}</td>
                   <td className="ln-zeile-leistungstext">{l.text}</td>
                   {mitAbschnitt ? <td className="col-optional small muted">{abschnittName(l.abschnittId) || 'ohne'}</td> : null}
                   <td className="ln-stunden">{stundenText(l.stunden)}</td>
                   <td className="col-optional">
                     <QuelleBadge quelle={l.quelle} />
                   </td>
-                  <td className="actions">
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      title="Leistung bearbeiten"
-                      aria-label="Leistung bearbeiten"
-                      onClick={() => onBearbeiten(l)}
-                    >
-                      <Icon name="bearbeiten" size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      title="Leistung löschen"
-                      aria-label="Leistung löschen"
-                      onClick={() => onLoeschen(l)}
-                    >
-                      <Icon name="loeschen" size={15} />
-                    </button>
-                  </td>
+                  {bearbeitbar ? (
+                    <td className="actions">
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        title="Leistung bearbeiten"
+                        aria-label="Leistung bearbeiten"
+                        onClick={() => onBearbeiten(l)}
+                      >
+                        <Icon name="bearbeiten" size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        title="Leistung löschen"
+                        aria-label="Leistung löschen"
+                        onClick={() => onLoeschen(l)}
+                      >
+                        <Icon name="loeschen" size={15} />
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
-              {leistungen.length === 0 ? (
-                <tr>
-                  <td colSpan={mitAbschnitt ? 7 : 6} className="small tertiary">
-                    Die Leistungen dieser Zeile wurden seit dem Abschluss gelöscht.
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>
       ) : null}
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Stunden je Mitarbeiter                                              */
-/* ------------------------------------------------------------------ */
-
-/**
- * Kontrolle wie die Wiko-Spalten der Excel-Vorlage: Stunden je Person, bei
- * Abschnitten je Abschnitt. Abgeschlossene Nachweise zeigen die Summen des
- * festgeschriebenen Stands (ohne Aufteilung nach Abschnitten).
- */
-function StundenJeMitarbeiter({
-  fassung,
-  leistungen,
-  abschnittIds,
-}: {
-  fassung: NachweisFassung;
-  /** Leistungen im Zeitraum; null bei abgeschlossenen Nachweisen. */
-  leistungen: Leistung[] | null;
-  abschnittIds: Set<ID>;
-}) {
-  const spalten = leistungen ? fassung.spalten.filter((s) => s.schluessel !== GESAMT) : [];
-  const jeAbschnitt = new Map<ID, Record<string, number>>();
-  for (const l of leistungen ?? []) {
-    const werte = jeAbschnitt.get(l.mitarbeiterId) ?? {};
-    const schluessel = l.abschnittId && abschnittIds.has(l.abschnittId) ? l.abschnittId : OHNE_ABSCHNITT;
-    werte[schluessel] = runden((werte[schluessel] ?? 0) + l.stunden);
-    jeAbschnitt.set(l.mitarbeiterId, werte);
-  }
-
-  return (
-    <Card>
-      <CardHeader
-        titel="Stunden je Mitarbeiter"
-        sub="Kontrolle – erscheint nicht im Druck; in der Excel-Datei rechts neben dem Druckbereich"
-      />
-      <div className="table-scroll">
-        <table className="table ln-mitarbeiterstunden">
-          <thead>
-            <tr>
-              <th>Kürzel</th>
-              <th>Name</th>
-              {spalten.map((s) => (
-                <th key={s.schluessel} className="ln-stunden" title={s.name}>
-                  {s.kurz}
-                </th>
-              ))}
-              <th className="ln-stunden">Gesamt</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fassung.mitarbeiter.map((m) => (
-              <tr key={m.id}>
-                <td className="num">{m.kuerzel}</td>
-                <td>{m.name}</td>
-                {spalten.map((s) => {
-                  const wert = jeAbschnitt.get(m.id)?.[s.schluessel] ?? 0;
-                  return (
-                    <td key={s.schluessel} className={`ln-stunden ${wert ? '' : 'ln-null'}`}>
-                      {wert ? stundenText(wert) : '–'}
-                    </td>
-                  );
-                })}
-                <td className="ln-stunden">{stundenText(m.stunden)}</td>
-              </tr>
-            ))}
-            <tr className="ln-mitarbeiterstunden-summe">
-              <td />
-              <td>Summe</td>
-              {spalten.map((s) => (
-                <td key={s.schluessel} className="ln-stunden">
-                  {stundenText(fassung.summen[s.schluessel] ?? 0)}
-                </td>
-              ))}
-              <td className="ln-stunden">{stundenText(fassung.summe)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Löschen                                                             */
-/* ------------------------------------------------------------------ */
-
-function NachweisLoeschen({
-  titel,
-  leistungen,
-  onClose,
-  onLoeschen,
-}: {
-  titel: string;
-  /** Zahl der Leistungen im Zeitraum. */
-  leistungen: number;
-  onClose: () => void;
-  onLoeschen: (mitLeistungen: boolean) => void;
-}) {
-  const [mit, setMit] = useState(false);
-  return (
-    <Modal
-      titel="Leistungsnachweis löschen?"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            Abbrechen
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ background: 'var(--red)' }}
-            onClick={() => {
-              onLoeschen(mit && leistungen > 0);
-              onClose();
-            }}
-          >
-            Löschen
-          </button>
-        </>
-      }
-    >
-      <div className="stack" style={{ gap: 12 }}>
-        <p className="muted">„{titel}“ wird gelöscht.</p>
-        {leistungen > 0 ? (
-          <>
-            <label className="checkbox">
-              <input type="checkbox" checked={mit} onChange={(e) => setMit(e.target.checked)} />
-              Auch die {anzahl(leistungen, 'Leistung', 'Leistungen')} im Zeitraum löschen
-            </label>
-            <p className="small tertiary">
-              {mit
-                ? 'Die Leistungen aller Mitarbeiter im Zeitraum werden endgültig gelöscht.'
-                : 'Die Leistungen bleiben erhalten und liegen danach in keinem Leistungsnachweis.'}
-            </p>
-          </>
-        ) : null}
-      </div>
-    </Modal>
   );
 }

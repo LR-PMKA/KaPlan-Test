@@ -1,6 +1,6 @@
 /**
  * Excel-Import der Leistungen aus der Zeiterfassung. Je Zeile eine Buchung mit
- * Datum, Mitarbeiter, Leistungstext, Stunden, Projekt („K2476: …“) und
+ * Datum, Mitarbeiter, Leistungstext, Stunden, Projekt („K9101: …“) und
  * Projektelement. Eine Datei kann mehrere Projekte und Mitarbeiter enthalten;
  * jede Leistung landet in ihrem Projekt und dort im Nachweis ihres Zeitraums.
  *
@@ -50,11 +50,11 @@ export interface ImportPosten {
   datum: ISODate;
   text: string;
   stunden: number;
-  /** „K2476“ (Großbuchstaben, ohne Leerzeichen). */
+  /** „K9101“ (Großbuchstaben, ohne Leerzeichen). */
   projektNummer: string;
-  /** „PS / PLM, Neubau Hp Aalen West“ */
+  /** „PS / PLM, Neubau Hp Musterstadt“ */
   projektName: string;
-  /** Roh, „01: Neustadt Nord, Strecke 3436“. */
+  /** Roh, „01: Nordheim, Strecke 9401“. */
   projektelement: string;
   /** Roh, „MM: Mustermann, Max“ oder ''. */
   mitarbeiterText: string;
@@ -154,7 +154,7 @@ export function kuerzelFrei(basis: string, vorhandene: Pick<Mitarbeiter, 'kuerze
   return k;
 }
 
-/** „K2476: PS / PLM, Neubau Hp Aalen West“ → { nummer: 'K2476', name: 'PS / PLM, Neubau Hp Aalen West' }; null, wenn keine Nummer. */
+/** „K9101: PS / PLM, Neubau Hp Musterstadt“ → { nummer: 'K9101', name: 'PS / PLM, Neubau Hp Musterstadt' }; null, wenn keine Nummer. */
 export function projektAusText(text: string): { nummer: string; name: string } | null {
   const m = /^\s*([A-Za-z]{1,3}\s*-?\s*\d{3,})(?![\dA-Za-z])\s*(?:[:\-–—]\s*)?([\s\S]*)$/.exec(text);
   if (!m) return null;
@@ -258,7 +258,7 @@ export function mitarbeiterAusText(text: string): { kuerzel: string; vorname: st
 }
 
 /**
- * „01: Neustadt Nord, Strecke 3436“ → { kennung: '01', name: 'Neustadt Nord, Strecke 3436' }; „01_buchen“ → { kennung: '01', name: 'buchen' }.
+ * „01: Nordheim, Strecke 9401“ → { kennung: '01', name: 'Nordheim, Strecke 9401' }; „01_buchen“ → { kennung: '01', name: 'buchen' }.
  * Ohne erkennbare Nummer ist der ganze Text die Kennung.
  */
 export function projektelementTeilen(text: string): { kennung: string; name: string } {
@@ -475,7 +475,7 @@ export interface VorschauProjekt {
   /** Neue bzw. entfallende Leistungen in abgeschlossenen Nachweisen (Stand bleibt bis „Wieder öffnen“). */
   inAbgeschlossenem: number;
   nachweise: { titel: string; art: 'neu' | 'erweitert' | 'vorhanden' }[];
-  /** Abschnitte, die der Import aus Spalte J anlegt („01 Neustadt Nord, Strecke 3436“ …). */
+  /** Abschnitte, die der Import aus Spalte J anlegt („01 Nordheim, Strecke 9401“ …). */
   neueAbschnitte: Abschnitt[];
 }
 

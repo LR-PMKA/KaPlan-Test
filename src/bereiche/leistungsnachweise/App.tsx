@@ -1,20 +1,28 @@
 /**
- * Rahmen der Leistungsnachweise: Seitenleiste, Kopfzeile, Hinweis nach einem
- * Ladefehler und Auswahl der Ansicht. Der Excel-Import ist projektübergreifend
- * und öffnet sich aus der Seitenleiste und der Übersicht.
+ * Rahmen der Leistungsnachweise: Seitenleiste, Kopfzeile, Hinweise (nach einem
+ * Ladefehler, ohne Anmeldung) und Auswahl der Ansicht. Der Excel-Import ist
+ * projektübergreifend und öffnet sich aus der Seitenleiste und der Übersicht.
+ *
+ * Die Anmeldung (components/AnmeldeDialog.tsx) wird hier bereitgestellt:
+ * Jede Ansicht kann sie öffnen – „Leistung erfassen“ und „Excel-Import“ führen
+ * ohne Anmeldung zuerst dorthin. Das Controlling erscheint nur mit der Rolle
+ * Controlling (domain/rechte.ts); wer die Adresse ohne Rolle aufruft, sieht
+ * „Kein Zugriff“ (`KeinZugriff` in pages/controlling/hilfen.tsx) – solange
+ * niemand die Rolle hat, mit „Rolle Controlling übernehmen“ zur Einrichtung.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Icon, type IconName } from '../../shared/icons';
 import { KaPlanLogo, MailaenderLogo } from '../../shared/logos';
 import { useToast } from '../../shared/toast';
-import { Callout, Card, ConfirmDialog, EmptyState, Field, Modal, Select, TextInput } from '../../shared/ui';
+import { Badge, Callout, Card, ConfirmDialog, EmptyState } from '../../shared/ui';
 import { BereichWechsel } from '../../shell/BereichWechsel';
+import { AnmeldeDialog, AnmeldeHinweis, AnmeldungBereitstellen, type AnmeldungOeffnen } from './components/AnmeldeDialog';
 import { ImportDialog } from './components/ImportDialog';
 import { SicherungEinspielenDialog, SicherungKnopf, SicherungWaehlen, type Sicherung } from './components/Sicherung';
-import { mitarbeiterAuswahlText, nachNamen } from './components/common';
 import { leistungenOhneNachweis, nachweisTitel } from './domain/nachweis';
-import { STANDARD_BEARBEITER, mitarbeiterName, projektTitel, type Leistungsnachweis, type Projekt } from './domain/types';
-import { useRoute, type Route } from './lib/router';
+import { angemeldet, istControlling } from './domain/rechte';
+import { mitarbeiterName, projektTitel, type Leistungsnachweis, type Projekt } from './domain/types';
+import { useRoute, type ControllingTab, type Route } from './lib/router';
 import { Abrechnung } from './pages/controlling/Abrechnung';
 import { Controlling } from './pages/controlling/Controlling';
 import { ProjektDetail } from './pages/ProjektDetail';
@@ -29,7 +37,7 @@ export function App() {
   const toast = useToast();
   const [route, navigate] = useRoute();
   const [menuOffen, setMenuOffen] = useState(false);
-  const [bearbeiterDialog, setBearbeiterDialog] = useState(false);
+  const [anmeldung, setAnmeldung] = useState<{ danach?: () => void; rolle?: boolean } | null>(null);
   const [zuruecksetzenDialog, setZuruecksetzenDialog] = useState(false);
   const [sicherung, setSicherung] = useState<Sicherung | null>(null);
   const [importOffen, setImportOffen] = useState(false);
@@ -45,16 +53,25 @@ export function App() {
     route.view === 'nachweis' || route.view === 'abrechnung'
       ? data.nachweise.find((n) => n.id === route.nachweisId && n.projektId === route.projektId)
       : undefined;
-  const ich = data.mitarbeiter.find((m) => m.id === data.einstellungen.mitarbeiterId);
+  const ich = angemeldet(data);
+  const controlling = istControlling(data);
 
   const gehe = (r: Route) => {
     navigate(r);
     setMenuOffen(false);
   };
 
-  const importOeffnen = () => {
-    setImportOffen(true);
+  // Anmeldedialog – von jeder Ansicht aus (useAnmeldung), mit Fortsetzung nach der Anmeldung
+  const anmeldungOeffnen = useCallback<AnmeldungOeffnen>((danach, optionen) => {
+    setAnmeldung({ danach, rolle: optionen?.rolle });
     setMenuOffen(false);
+  }, []);
+
+  // Ohne Anmeldung führt der Import zuerst in die Anmeldung
+  const importOeffnen = () => {
+    setMenuOffen(false);
+    if (ich) setImportOffen(true);
+    else anmeldungOeffnen(() => setImportOffen(true));
   };
 
   const farbmodus = data.einstellungen.farbmodus;
@@ -63,166 +80,199 @@ export function App() {
     document.documentElement.dataset.farbmodus = farbmodus;
   }, [farbmodus]);
 
-  const kopf = kopfzeile(route, projekt, nachweis);
+  // Controlling-Ansichten nur mit der Rolle – sonst „Kein Zugriff“
+  const controllingAnsicht = route.view === 'controlling' || route.view === 'abrechnung';
+  const kopf = controllingAnsicht && !controlling ? { titel: 'Controlling' } : kopfzeile(route, projekt, nachweis);
 
   return (
-    <div className="app ln-app">
-      <aside className={`sidebar ${menuOffen ? 'open' : ''}`}>
-        <button type="button" className="sidebar-brand" onClick={() => gehe({ view: 'uebersicht' })} title="Zur Übersicht">
-          <KaPlanLogo variante="Leistungsnachweise" width="100%" />
-        </button>
-
-        <NavItem
-          icon="dashboard"
-          label="Übersicht"
-          aktiv={route.view === 'uebersicht'}
-          badge={ohneNachweis > 0 ? String(ohneNachweis) : undefined}
-          badgeAlarm
-          titel={ohneNachweis > 0 ? `Übersicht – ${ohneNachweis} Leistungen ohne Leistungsnachweis` : undefined}
-          onClick={() => gehe({ view: 'uebersicht' })}
-        />
-        <NavItem icon="projekt" label="Projekte" aktiv={route.view === 'projekte'} onClick={() => gehe({ view: 'projekte' })} />
-        <NavItem
-          icon="person"
-          label="Mitarbeiter"
-          aktiv={route.view === 'controlling' || route.view === 'abrechnung'}
-          onClick={() => gehe({ view: 'controlling', tab: 'mitarbeiter' })}
-        />
-        <NavItem
-          icon="importieren"
-          label="Excel-Import"
-          aktiv={false}
-          titel="Leistungen aus der Zeiterfassung (Excel) übernehmen"
-          onClick={importOeffnen}
-        />
-
-        <div className="nav-group-label">
-          Projekte
-          {markierte.length < data.projekte.length ? <span className="tertiary"> (markierte)</span> : null}
-        </div>
-        {markierte.map((p) => {
-          const offen = data.nachweise.filter((n) => n.projektId === p.id && n.status === 'entwurf').length;
-          return (
-            <NavItem
-              key={p.id}
-              icon="stunden"
-              label={projektTitel(p)}
-              aktiv={projekt?.id === p.id}
-              badge={offen > 0 ? String(offen) : undefined}
-              titel={offen > 0 ? `${projektTitel(p)} – ${offen} Leistungsnachweise in Bearbeitung` : undefined}
-              onClick={() => gehe({ view: 'projekt', projektId: p.id, tab: 'nachweise' })}
-            />
-          );
-        })}
-
-        <div className="sidebar-footer">
-          <button type="button" className="bearbeiter" onClick={() => setBearbeiterDialog(true)}>
-            <span className="avatar" style={{ width: 26, height: 26 }}>
-              {initialen(data.einstellungen.bearbeiter)}
-            </span>
-            <span style={{ minWidth: 0 }}>
-              <strong className="truncate">{data.einstellungen.bearbeiter}</strong>
-              {ich ? <span className="truncate ln-erfasst-als">erfasst als {ich.kuerzel || mitarbeiterName(ich)}</span> : null}
-            </span>
+    <AnmeldungBereitstellen value={anmeldungOeffnen}>
+      <div className="app ln-app">
+        <aside className={`sidebar ${menuOffen ? 'open' : ''}`}>
+          <button type="button" className="sidebar-brand" onClick={() => gehe({ view: 'uebersicht' })} title="Zur Übersicht">
+            <KaPlanLogo variante="Leistungsnachweise" width="100%" />
           </button>
-          <div className="sicherung-knoepfe">
-            <SicherungKnopf />
-            <SicherungWaehlen onGelesen={setSicherung} />
+
+          <NavItem
+            icon="dashboard"
+            label="Übersicht"
+            aktiv={route.view === 'uebersicht'}
+            badge={ohneNachweis > 0 ? String(ohneNachweis) : undefined}
+            badgeAlarm
+            titel={ohneNachweis > 0 ? `Übersicht – ${ohneNachweis} Leistungen ohne Leistungsnachweis` : undefined}
+            onClick={() => gehe({ view: 'uebersicht' })}
+          />
+          <NavItem icon="projekt" label="Projekte" aktiv={route.view === 'projekte'} onClick={() => gehe({ view: 'projekte' })} />
+          <NavItem
+            icon="importieren"
+            label="Excel-Import"
+            aktiv={false}
+            titel={
+              ich
+                ? 'Eigene Leistungen aus der Zeiterfassung (Excel) übernehmen'
+                : 'Leistungen aus der Zeiterfassung (Excel) übernehmen – zuerst anmelden'
+            }
+            onClick={importOeffnen}
+          />
+          {controlling ? (
+            <NavItem
+              icon="aufgabe"
+              label="Controlling"
+              aktiv={controllingAnsicht}
+              titel="Controlling – Auswertung, Abrechnung, Abschluss, Export und Mitarbeiter"
+              onClick={() => gehe({ view: 'controlling', tab: 'auswertung' })}
+            />
+          ) : null}
+
+          <div className="nav-group-label">
+            Projekte
+            {markierte.length < data.projekte.length ? <span className="tertiary"> (markierte)</span> : null}
+          </div>
+          {markierte.map((p) => {
+            const offen = data.nachweise.filter((n) => n.projektId === p.id && n.status === 'entwurf').length;
+            return (
+              <NavItem
+                key={p.id}
+                icon="stunden"
+                label={projektTitel(p)}
+                aktiv={projekt?.id === p.id}
+                badge={offen > 0 ? String(offen) : undefined}
+                titel={offen > 0 ? `${projektTitel(p)} – ${offen} Leistungsnachweise in Bearbeitung` : undefined}
+                onClick={() => gehe({ view: 'projekt', projektId: p.id, tab: 'nachweise' })}
+              />
+            );
+          })}
+
+          <div className="sidebar-footer">
             <button
               type="button"
-              className="btn btn-sm btn-outline"
-              onClick={() => setZuruecksetzenDialog(true)}
-              disabled={ladeZustand === 'neuere_fassung'}
-              title={
-                ladeZustand === 'neuere_fassung'
-                  ? 'Gesperrt, damit der Stand aus der neueren Fassung erhalten bleibt'
-                  : undefined
-              }
+              className={`bearbeiter ln-anmeldung ${ich ? '' : 'ln-abgemeldet'}`}
+              onClick={() => anmeldungOeffnen()}
+              title={ich ? 'Anmeldung wechseln, abmelden, Farbmodus' : 'Anmelden – erst dann lassen sich Leistungen erfassen'}
             >
-              Zurücksetzen
+              <span className="avatar" style={{ width: 26, height: 26 }}>
+                {ich ? ich.kuerzel.slice(0, 3) || initialen(mitarbeiterName(ich)) : '?'}
+              </span>
+              {ich ? (
+                <span className="ln-anmeldung-text">
+                  <span className="ln-anmeldung-label">Angemeldet als</span>
+                  <strong className="truncate">{mitarbeiterName(ich) || ich.kuerzel}</strong>
+                  {ich.controlling ? <Badge ton="blue">Controlling</Badge> : null}
+                </span>
+              ) : (
+                <span className="ln-anmeldung-text">
+                  <strong>Nicht angemeldet</strong>
+                  <span className="ln-anmeldung-label">Zum Anmelden klicken</span>
+                </span>
+              )}
             </button>
+            <div className="sicherung-knoepfe">
+              <SicherungKnopf />
+              <SicherungWaehlen onGelesen={setSicherung} />
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                onClick={() => setZuruecksetzenDialog(true)}
+                disabled={ladeZustand === 'neuere_fassung'}
+                title={
+                  ladeZustand === 'neuere_fassung'
+                    ? 'Gesperrt, damit der Stand aus der neueren Fassung erhalten bleibt'
+                    : undefined
+                }
+              >
+                Zurücksetzen
+              </button>
+            </div>
+            Daten werden lokal im Browser gespeichert.
+            <BereichWechsel />
           </div>
-          Daten werden lokal im Browser gespeichert.
-          <BereichWechsel />
-        </div>
-      </aside>
+        </aside>
 
-      <main className="main">
-        <header className="topbar">
-          <button type="button" className="btn-icon menu-toggle" onClick={() => setMenuOffen((o) => !o)} aria-label="Menü">
-            <Icon name="menu" size={18} />
-          </button>
-          <div className="topbar-title">
-            <h1>{kopf.titel}</h1>
-            {kopf.sub ? <div className="sub">{kopf.sub}</div> : null}
+        <main className="main">
+          <header className="topbar">
+            <button type="button" className="btn-icon menu-toggle" onClick={() => setMenuOffen((o) => !o)} aria-label="Menü">
+              <Icon name="menu" size={18} />
+            </button>
+            <div className="topbar-title">
+              <h1>{kopf.titel}</h1>
+              {kopf.sub ? <div className="sub">{kopf.sub}</div> : null}
+            </div>
+            <div className="topbar-logo">
+              <MailaenderLogo height={34} />
+            </div>
+          </header>
+
+          <div className="content">
+            <div className="content-inner">
+              <LadeHinweis />
+              <AnmeldeHinweis daten={data} />
+              {route.view === 'uebersicht' ? <Uebersicht navigate={gehe} onImport={importOeffnen} /> : null}
+              {route.view === 'projekte' ? <Projekte navigate={gehe} /> : null}
+              {/* Beide prüfen die Rolle selbst und zeigen ohne sie „Kein Zugriff“ */}
+              {route.view === 'controlling' ? <Controlling tab={route.tab} navigate={gehe} /> : null}
+              {route.view === 'abrechnung' ? (
+                <Abrechnung key={route.nachweisId} projektId={route.projektId} nachweisId={route.nachweisId} navigate={gehe} />
+              ) : null}
+              {route.view === 'projekt' ? (
+                projekt ? (
+                  <ProjektDetail projekt={projekt} tab={route.tab} navigate={gehe} />
+                ) : (
+                  <NichtGefunden label="Zu den Projekten" onZurueck={() => gehe({ view: 'projekte' })} />
+                )
+              ) : null}
+              {route.view === 'nachweis' ? (
+                projekt && nachweis ? (
+                  <NachweisEditor key={nachweis.id} projekt={projekt} nachweis={nachweis} navigate={gehe} />
+                ) : (
+                  <NichtGefunden
+                    label={projekt ? 'Zu den Leistungsnachweisen' : 'Zu den Projekten'}
+                    onZurueck={() =>
+                      gehe(projekt ? { view: 'projekt', projektId: projekt.id, tab: 'nachweise' } : { view: 'projekte' })
+                    }
+                  />
+                )
+              ) : null}
+            </div>
           </div>
-          <div className="topbar-logo">
-            <MailaenderLogo height={34} />
-          </div>
-        </header>
+        </main>
 
-        <div className="content">
-          <div className="content-inner">
-            <LadeHinweis />
-            {route.view === 'uebersicht' ? <Uebersicht navigate={gehe} onImport={importOeffnen} /> : null}
-            {route.view === 'projekte' ? <Projekte navigate={gehe} /> : null}
-            {route.view === 'controlling' ? <Controlling tab={route.tab} navigate={gehe} /> : null}
-            {route.view === 'abrechnung' ? (
-              <Abrechnung key={route.nachweisId} projektId={route.projektId} nachweisId={route.nachweisId} navigate={gehe} />
-            ) : null}
-            {route.view === 'projekt' ? (
-              projekt ? (
-                <ProjektDetail projekt={projekt} tab={route.tab} navigate={gehe} />
-              ) : (
-                <NichtGefunden label="Zu den Projekten" onZurueck={() => gehe({ view: 'projekte' })} />
-              )
-            ) : null}
-            {route.view === 'nachweis' ? (
-              projekt && nachweis ? (
-                <NachweisEditor key={nachweis.id} projekt={projekt} nachweis={nachweis} navigate={gehe} />
-              ) : (
-                <NichtGefunden
-                  label={projekt ? 'Zu den Leistungsnachweisen' : 'Zu den Projekten'}
-                  onZurueck={() =>
-                    gehe(projekt ? { view: 'projekt', projektId: projekt.id, tab: 'nachweise' } : { view: 'projekte' })
-                  }
-                />
-              )
-            ) : null}
-          </div>
-        </div>
-      </main>
+        {menuOffen ? (
+          <div className="overlay" style={{ background: 'rgba(0,0,0,0.18)', zIndex: 80 }} onClick={() => setMenuOffen(false)} />
+        ) : null}
 
-      {menuOffen ? (
-        <div className="overlay" style={{ background: 'rgba(0,0,0,0.18)', zIndex: 80 }} onClick={() => setMenuOffen(false)} />
-      ) : null}
+        {importOffen ? <ImportDialog onClose={() => setImportOffen(false)} navigate={gehe} /> : null}
 
-      {bearbeiterDialog ? <BearbeiterDialog onClose={() => setBearbeiterDialog(false)} /> : null}
+        {sicherung ? (
+          <SicherungEinspielenDialog
+            sicherung={sicherung}
+            onClose={() => setSicherung(null)}
+            onEingespielt={() => gehe({ view: 'uebersicht' })}
+          />
+        ) : null}
 
-      {importOffen ? <ImportDialog onClose={() => setImportOffen(false)} navigate={gehe} /> : null}
+        {zuruecksetzenDialog ? (
+          <ConfirmDialog
+            titel="Daten zurücksetzen?"
+            text="Alle lokal gespeicherten Projekte, Mitarbeiter, Leistungen und Leistungsnachweise dieses Bereichs werden verworfen und der Demodatenbestand wird neu geladen. Die anderen Bereiche bleiben unberührt."
+            bestaetigenLabel="Zurücksetzen"
+            onConfirm={() => {
+              zuruecksetzen();
+              toast('Demodaten wiederhergestellt.');
+              gehe({ view: 'uebersicht' });
+            }}
+            onClose={() => setZuruecksetzenDialog(false)}
+          />
+        ) : null}
 
-      {sicherung ? (
-        <SicherungEinspielenDialog
-          sicherung={sicherung}
-          onClose={() => setSicherung(null)}
-          onEingespielt={() => gehe({ view: 'uebersicht' })}
-        />
-      ) : null}
-
-      {zuruecksetzenDialog ? (
-        <ConfirmDialog
-          titel="Daten zurücksetzen?"
-          text="Alle lokal gespeicherten Projekte, Mitarbeiter, Leistungen und Leistungsnachweise dieses Bereichs werden verworfen und der Demodatenbestand wird neu geladen. Die anderen Bereiche bleiben unberührt."
-          bestaetigenLabel="Zurücksetzen"
-          onConfirm={() => {
-            zuruecksetzen();
-            toast('Demodaten wiederhergestellt.');
-            gehe({ view: 'uebersicht' });
-          }}
-          onClose={() => setZuruecksetzenDialog(false)}
-        />
-      ) : null}
-    </div>
+        {/* Zuletzt, damit die Anmeldung über einem offenen Dialog liegt */}
+        {anmeldung ? (
+          <AnmeldeDialog
+            rolleVorgabe={anmeldung.rolle}
+            onClose={() => setAnmeldung(null)}
+            onAngemeldet={anmeldung.danach}
+          />
+        ) : null}
+      </div>
+    </AnmeldungBereitstellen>
   );
 }
 
@@ -292,88 +342,6 @@ function LadeHinweis() {
   );
 }
 
-/**
- * „Angemeldet als“: Name der Person, der Mitarbeiter, als der sie Leistungen
- * erfasst („Ich erfasse als“), und der Farbmodus.
- */
-function BearbeiterDialog({ onClose }: { onClose: () => void }) {
-  const { data, setEinstellungen, anmelden } = useStore();
-  const [name, setName] = useState(data.einstellungen.bearbeiter);
-  const [mitarbeiterId, setMitarbeiterId] = useState(data.einstellungen.mitarbeiterId ?? '');
-  const [kontrast, setKontrast] = useState(data.einstellungen.farbmodus === 'kontrast');
-
-  // Zur Wahl stehen die aktiven Mitarbeiter – und die bisher gewählte Person, auch wenn sie ausgeschieden ist
-  const wahl = data.mitarbeiter
-    .filter((m) => m.aktiv || m.id === data.einstellungen.mitarbeiterId)
-    .sort(nachNamen);
-  const optionen = [{ value: '', label: '– keiner –' }, ...wahl.map((m) => ({ value: m.id, label: mitarbeiterAuswahlText(m) }))];
-
-  const mitarbeiterWaehlen = (id: string) => {
-    setMitarbeiterId(id);
-    const m = data.mitarbeiter.find((x) => x.id === id);
-    if (!m) return;
-    // Den Namen nur vorschlagen: Ein selbst gewählter Name bleibt stehen
-    const bisher = name.trim();
-    const vorgeschlagen = !bisher || bisher === STANDARD_BEARBEITER || data.mitarbeiter.some((x) => mitarbeiterName(x) === bisher);
-    if (vorgeschlagen) setName(mitarbeiterName(m));
-  };
-
-  return (
-    <Modal
-      titel="Angemeldet als"
-      sub="Eigene Angaben und persönliche Einstellungen"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            Abbrechen
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              anmelden(mitarbeiterId || null);
-              setEinstellungen({
-                bearbeiter: name.trim() || STANDARD_BEARBEITER,
-                farbmodus: kontrast ? 'kontrast' : 'standard',
-              });
-              onClose();
-            }}
-          >
-            Übernehmen
-          </button>
-        </>
-      }
-    >
-      <div className="form-grid">
-        <Field label="Name" full hint="Steht in der Seitenleiste; die Auswahl darunter schlägt ihn vor.">
-          <TextInput value={name} onChange={setName} placeholder="Vor- und Nachname" />
-        </Field>
-        <Field
-          label="Ich erfasse als"
-          full
-          hint="Diese Person wird beim Erfassen von Leistungen und für Importzeilen ohne Mitarbeiter vorgegeben."
-        >
-          <Select value={mitarbeiterId} onChange={mitarbeiterWaehlen} options={optionen} />
-        </Field>
-        <Field
-          label="Darstellung"
-          full
-          hint="Farben für eine Rot-Grün-Sehschwäche: Blaugrün, Bernstein und Magenta statt Grün, Orange und Rot – zusätzlich mit stärkeren Kontrasten."
-        >
-          <label className="checkbox">
-            <input type="checkbox" checked={kontrast} onChange={(e) => setKontrast(e.target.checked)} />
-            Farbmodus für Rot-Grün-Sehschwäche (hoher Kontrast)
-          </label>
-        </Field>
-      </div>
-      <p className="small tertiary" style={{ marginTop: 12 }}>
-        Die Einstellungen gelten nur für die Leistungsnachweise; die anderen Bereiche führen eigene.
-      </p>
-    </Modal>
-  );
-}
-
 function NavItem({
   icon,
   label,
@@ -420,6 +388,13 @@ function NichtGefunden({ label, onZurueck }: { label: string; onZurueck: () => v
   );
 }
 
+/** Untertitel der Kopfzeile je Reiter des Controllings. */
+const CONTROLLING_UNTERTITEL: Record<ControllingTab, string> = {
+  auswertung: 'Auswertung – Stunden je Mitarbeiter und Projekt',
+  nachweise: 'Leistungsnachweise aller Projekte – Abrechnung, Abschluss und Export',
+  mitarbeiter: 'Mitarbeiter und Rolle Controlling',
+};
+
 function kopfzeile(route: Route, projekt?: Projekt, nachweis?: Leistungsnachweis): { titel: string; sub?: string } {
   switch (route.view) {
     case 'uebersicht':
@@ -427,7 +402,7 @@ function kopfzeile(route: Route, projekt?: Projekt, nachweis?: Leistungsnachweis
     case 'projekte':
       return { titel: 'Projekte', sub: 'Projektverwaltung' };
     case 'controlling':
-      return { titel: 'Controlling', sub: 'Stunden, Abrechnung und Mitarbeiter' };
+      return { titel: 'Controlling', sub: CONTROLLING_UNTERTITEL[route.tab] };
     case 'abrechnung':
       return { titel: nachweis ? nachweisTitel(nachweis) : 'Leistungsnachweis', sub: `${projekt ? projektTitel(projekt) : 'Projekt'} · Abrechnung` };
     case 'projekt':

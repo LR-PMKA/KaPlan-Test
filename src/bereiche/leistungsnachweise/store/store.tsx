@@ -83,8 +83,11 @@ interface StoreValue {
   /** Rolle Controlling vergeben/entziehen (`rolleSetzenPruefen`); liefert die Meldung oder null. */
   rolleSetzen: (mitarbeiterId: ID, controlling: boolean) => string | null;
   /* Mitarbeiter (nur Controlling) */
-  /** Legt einen Mitarbeiter an (ohne Rolle); null ohne Recht. */
-  addMitarbeiter: (m: Omit<Mitarbeiter, 'id' | 'controlling'>) => ID | null;
+  /**
+   * Legt einen Mitarbeiter an; null ohne Recht. Mit `controlling: true` gleich mit der Rolle
+   * (wer anlegen darf, darf sie vergeben) – nur für aktive Personen.
+   */
+  addMitarbeiter: (m: Omit<Mitarbeiter, 'id' | 'controlling'> & { controlling?: boolean }) => ID | null;
   /** Ändert einen Mitarbeiter (nicht die Rolle); liefert die Meldung (etwa die letzte Person mit Rolle deaktivieren) oder null. */
   updateMitarbeiter: (id: ID, patch: Partial<Omit<Mitarbeiter, 'id' | 'controlling'>>) => string | null;
   /** Nur ohne Leistungen und nicht die letzte Person mit Rolle; liefert die Meldung oder null. */
@@ -121,7 +124,10 @@ interface StoreValue {
    * Angemeldete ändern, solange der Nachweis offen ist (gemeinsame Bearbeitung).
    */
   updateNachweis: (id: ID, patch: Partial<Pick<Leistungsnachweis, 'titel' | 'von' | 'bis' | 'raster' | 'bemerkung'>>) => void;
-  /** Löscht den Nachweis (nur Controlling); mitLeistungen = auch die Leistungen in seinem Zeitraum löschen. */
+  /**
+   * Löscht den Nachweis (nur Controlling); mitLeistungen = auch die eigenen Leistungen in seinem
+   * Zeitraum löschen. Leistungen anderer bleiben – sie löscht auch das Controlling nicht.
+   */
   deleteNachweis: (id: ID, mitLeistungen: boolean) => void;
   /** Text einer Zeile setzen (mit den Leistungs-IDs der Zeile); null = wieder automatisch. Jeder Angemeldete, nur offene Nachweise. */
   zeilenTextSetzen: (nachweisId: ID, zeile: NachweisZeile, text: string | null) => void;
@@ -300,9 +306,12 @@ export function storeAktionen(data: LeistungsnachweisDaten, mutate: Mutate): Sto
     addMitarbeiter: (m) => {
       if (!darf(data, 'mitarbeiterVerwalten')) return null;
       const id = newId('ma');
+      const { controlling: rolle, ...werte } = m;
       mutate(
         controllingNur((d) =>
-          d.mitarbeiter.some((x) => x.id === id) ? d : { ...d, mitarbeiter: [...d.mitarbeiter, { ...m, id, controlling: false }] },
+          d.mitarbeiter.some((x) => x.id === id)
+            ? d
+            : { ...d, mitarbeiter: [...d.mitarbeiter, { ...werte, id, controlling: rolle === true && werte.aktiv }] },
         ),
       );
       return id;
@@ -482,7 +491,9 @@ export function storeAktionen(data: LeistungsnachweisDaten, mutate: Mutate): Sto
             ...d,
             nachweise: d.nachweise.filter((x) => x.id !== id),
             leistungen: mitLeistungen
-              ? d.leistungen.filter((l) => !(l.projektId === n.projektId && l.datum >= n.von && l.datum <= n.bis))
+              ? d.leistungen.filter(
+                  (l) => !(l.projektId === n.projektId && l.datum >= n.von && l.datum <= n.bis && darfLeistungAendern(d, l)),
+                )
               : d.leistungen,
           };
         }),

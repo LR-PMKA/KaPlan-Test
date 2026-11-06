@@ -3,7 +3,8 @@
  * Projektsteuerung. Ohne eigene Auswahl gelten die Standardlogos
  * (`STANDARD_LOGOS`); hinzugefügte Bilder werden verkleinert und als
  * Bilddaten im Bestand gespeichert. Abgeschlossene Nachweise drucken mit den
- * Logos, die das Projekt beim Drucken führt.
+ * Logos, die das Projekt beim Drucken führt. Ändern darf jede angemeldete
+ * Person (`gesperrt` ohne Anmeldung).
  */
 import { useRef } from 'react';
 import { Icon } from '../../../shared/icons';
@@ -46,7 +47,7 @@ function logoLesen(datei: File): Promise<string> {
   });
 }
 
-export function LogoVerwaltung({ projekt }: { projekt: Projekt }) {
+export function LogoVerwaltung({ projekt, gesperrt = false }: { projekt: Projekt; gesperrt?: boolean }) {
   const { updateProjekt } = useStore();
   const toast = useToast();
   const eingabe = useRef<HTMLInputElement>(null);
@@ -70,85 +71,87 @@ export function LogoVerwaltung({ projekt }: { projekt: Projekt }) {
 
   return (
     <Card className="ln-kopf-knoepfe">
-      <CardHeader
-        titel="Logos im Druckkopf"
-        sub={`Oben rechts im Kopf der Leistungsnachweise dieses Projekts – in dieser Reihenfolge${
-          projekt.logos === null ? ' (Standardlogos)' : ''
-        }`}
-        actions={
-          <>
-            {projekt.logos !== null ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => {
-                  updateProjekt(projekt.id, { logos: null });
-                  toast('Standardlogos wiederhergestellt.');
-                }}
-              >
-                Standardlogos
+      <fieldset className="ln-fieldset" disabled={gesperrt}>
+        <CardHeader
+          titel="Logos im Druckkopf"
+          sub={`Oben rechts im Kopf der Leistungsnachweise dieses Projekts – in dieser Reihenfolge${
+            projekt.logos === null ? ' (Standardlogos)' : ''
+          }`}
+          actions={
+            <>
+              {projekt.logos !== null ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => {
+                    updateProjekt(projekt.id, { logos: null });
+                    toast('Standardlogos wiederhergestellt.');
+                  }}
+                >
+                  Standardlogos
+                </button>
+              ) : null}
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => eingabe.current?.click()}>
+                <Icon name="plus" size={12} /> Logo hinzufügen
               </button>
-            ) : null}
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => eingabe.current?.click()}>
-              <Icon name="plus" size={12} /> Logo hinzufügen
-            </button>
-            <input
-              ref={eingabe}
-              type="file"
-              accept="image/png,image/jpeg,image/svg+xml,image/webp"
-              multiple
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const dateien = [...(e.target.files ?? [])];
-                e.target.value = '';
-                void hinzufuegen(dateien);
-              }}
-            />
-          </>
-        }
-      />
-      <div className="card-pad">
-        {logos.length === 0 ? (
-          <p className="small tertiary">
-            Keine Logos – der Kopf des Nachweises bleibt rechts leer. „Standardlogos“ stellt{' '}
-            {STANDARD_LOGOS.map((l) => l.name).join(' und ')} wieder her.
-          </p>
-        ) : (
-          <div className="ln-logo-liste">
-            {logos.map((l, i) => (
-              <div key={l.id} className="ln-logo">
-                <img src={logoQuelle(l.src)} alt={l.name} title={l.name} />
-                <button
-                  type="button"
-                  className="btn-icon"
-                  disabled={i === 0}
-                  title="Nach links"
-                  aria-label="Logo nach links"
-                  onClick={() => {
-                    const neu = [...logos];
-                    [neu[i - 1], neu[i]] = [neu[i], neu[i - 1]];
-                    setzen(neu);
-                  }}
-                >
-                  <Icon name="zurueck" size={13} />
-                </button>
-                <button
-                  type="button"
-                  className="btn-icon"
-                  title="Logo entfernen"
-                  aria-label="Logo entfernen"
-                  onClick={() => {
-                    setzen(logos.filter((x) => x.id !== l.id));
-                    toast('Logo entfernt.');
-                  }}
-                >
-                  <Icon name="loeschen" size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              <input
+                ref={eingabe}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const dateien = [...(e.target.files ?? [])];
+                  e.target.value = '';
+                  void hinzufuegen(dateien);
+                }}
+              />
+            </>
+          }
+        />
+        <div className="card-pad">
+          {logos.length === 0 ? (
+            <p className="small tertiary">
+              Keine Logos – der Kopf des Nachweises bleibt rechts leer. „Standardlogos“ stellt{' '}
+              {STANDARD_LOGOS.map((l) => l.name).join(' und ')} wieder her.
+            </p>
+          ) : (
+            <div className="ln-logo-liste">
+              {logos.map((l, i) => (
+                <div key={l.id} className="ln-logo">
+                  <img src={logoQuelle(l.src)} alt={l.name} title={l.name} />
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    disabled={i === 0}
+                    title="Nach links"
+                    aria-label="Logo nach links"
+                    onClick={() => {
+                      const neu = [...logos];
+                      [neu[i - 1], neu[i]] = [neu[i], neu[i - 1]];
+                      setzen(neu);
+                    }}
+                  >
+                    <Icon name="zurueck" size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    title="Logo entfernen"
+                    aria-label="Logo entfernen"
+                    onClick={() => {
+                      setzen(logos.filter((x) => x.id !== l.id));
+                      toast('Logo entfernt.');
+                    }}
+                  >
+                    <Icon name="loeschen" size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </fieldset>
     </Card>
   );
 }

@@ -1,16 +1,20 @@
 /**
  * Projektliste mit Anlage- und Bearbeitungsdialog. Die Projektnummer
- * („K2476“) ist der Schlüssel, über den der Excel-Import die Leistungen einem
- * Projekt zuordnet; sie ist deshalb eindeutig.
+ * („K9101“) ist der Schlüssel, über den der Excel-Import die Leistungen einem
+ * Projekt zuordnet; sie ist deshalb eindeutig. Projekte anlegen und ändern
+ * darf jede angemeldete Person – ohne Anmeldung führt „Neues Projekt“ zuerst
+ * in die Anmeldung.
  */
 import { useId, useState } from 'react';
 import { today } from '../../../shared/dates';
 import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Badge, Card, EmptyState, Field, Modal, Search, Segmented, Select, TextArea, TextInput } from '../../../shared/ui';
+import { useMitAnmeldung } from '../components/AnmeldeDialog';
 import { RASTER_OPTIONEN, REGEL_OPTIONEN, RasterBadge, STATUS_TON } from '../components/common';
 import { IMPORT_PROJEKT_VORGABEN, nummerNormal } from '../domain/import';
 import { leistungenOhneNachweis, stundenVon } from '../domain/nachweis';
+import { NICHT_ANGEMELDET, angemeldet } from '../domain/rechte';
 import {
   LEISTUNGSBEREICH_VORSCHLAEGE,
   PROJEKT_STATUS_LABEL,
@@ -30,8 +34,10 @@ const STATUS_OPTIONEN = (Object.keys(PROJEKT_STATUS_LABEL) as ProjektStatus[]).m
 
 export function Projekte({ navigate }: { navigate: (r: Route) => void }) {
   const { data, toggleMarkiert } = useStore();
+  const mitAnmeldung = useMitAnmeldung();
   const [suche, setSuche] = useState('');
   const [dialog, setDialog] = useState(false);
+  const neu = () => mitAnmeldung(() => setDialog(true));
 
   const heute = today();
   const anfang = monatsanfang(heute);
@@ -55,7 +61,7 @@ export function Projekte({ navigate }: { navigate: (r: Route) => void }) {
             Alle sehen alle Projekte. Mit ★ markierte Projekte erscheinen in der Übersicht und in der Seitenleiste.
           </span>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setDialog(true)}>
+        <button type="button" className="btn btn-primary" onClick={neu}>
           <Icon name="plus" size={14} /> Neues Projekt
         </button>
       </div>
@@ -67,7 +73,7 @@ export function Projekte({ navigate }: { navigate: (r: Route) => void }) {
             titel="Kein Projekt gefunden"
             text="Legen Sie ein Projekt an, um Leistungen zu erfassen und Leistungsnachweise zu erstellen – oder übernehmen Sie Leistungen per Excel-Import; unbekannte Projekte legt der Import an."
             action={
-              <button type="button" className="btn btn-primary" onClick={() => setDialog(true)}>
+              <button type="button" className="btn btn-primary" onClick={neu}>
                 <Icon name="plus" size={14} /> Neues Projekt
               </button>
             }
@@ -193,6 +199,10 @@ export function ProjektDialog({
       kurzname: form.kurzname.trim(),
       leistungsbereich: form.leistungsbereich.trim(),
     };
+    if (!angemeldet(data)) {
+      toast(NICHT_ANGEMELDET);
+      return;
+    }
     if (projekt) {
       updateProjekt(projekt.id, werte);
       toast('Projekt aktualisiert.');
@@ -201,7 +211,7 @@ export function ProjektDialog({
     }
     const id = addProjekt({ ...werte, markiert: true, abschnitte: [], logos: null });
     if (!id) {
-      toast('Bitte zuerst anmelden.');
+      toast(NICHT_ANGEMELDET);
       return;
     }
     toast('Projekt angelegt.');
@@ -227,19 +237,19 @@ export function ProjektDialog({
     >
       <div className="form-grid ln-zweispaltig">
         <Field label="Projektnummer" hint="Daran erkennt der Excel-Import das Projekt.">
-          <TextInput value={form.nummer} onChange={(v) => set('nummer', v)} placeholder="K2476" autoFocus={!projekt} />
+          <TextInput value={form.nummer} onChange={(v) => set('nummer', v)} placeholder="K1234" autoFocus={!projekt} />
         </Field>
         <Field label="Status">
           <Select value={form.status} onChange={(v) => set('status', v as ProjektStatus)} options={STATUS_OPTIONEN} />
         </Field>
         <Field label="Projektname" full>
-          <TextInput value={form.name} onChange={(v) => set('name', v)} placeholder="z. B. PS / PLM, Neubau Hp Aalen West" />
+          <TextInput value={form.name} onChange={(v) => set('name', v)} placeholder="z. B. PS / PLM, Neubau Hp Musterstadt" />
         </Field>
         <Field label="Bezeichnung im Nachweis" hint="Optional – steht im Kopf des Leistungsnachweises; leer = Projektname.">
           <TextInput
             value={form.kurzname}
             onChange={(v) => set('kurzname', v)}
-            placeholder={form.name.trim() || 'z. B. Hp Aalen-West'}
+            placeholder={form.name.trim() || 'z. B. Hp Musterstadt'}
           />
         </Field>
         <Field label="Leistungsbereich" hint="Steht im Kopf des Leistungsnachweises.">

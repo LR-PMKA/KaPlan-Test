@@ -1,15 +1,29 @@
 /**
  * Neuer Leistungsnachweis bzw. Zeitraum, Raster und Überschrift eines
- * vorhandenen ändern. Der Zeitraum ist ein Kalendermonat (Schnellwahl) oder
- * frei mit Beginn und Ende – auch über mehrere Monate. Nachweise eines
- * Projekts überschneiden sich nie; welche Leistungen ein Nachweis zeigt,
- * ergibt sich allein aus seinem Zeitraum.
+ * vorhandenen ändern – dem Controlling vorbehalten (domain/rechte.ts). Der
+ * Zeitraum ist ein Kalendermonat (Schnellwahl) oder frei mit Beginn und Ende –
+ * auch über mehrere Monate. Nachweise eines Projekts überschneiden sich nie;
+ * welche Leistungen ein Nachweis zeigt, ergibt sich allein aus seinem Zeitraum.
+ *
+ * Wechselt das Raster, warnt der Dialog, wenn dadurch von Hand bearbeitete
+ * Texte oder Aufschläge nicht mehr angezeigt werden (`rasterwechselHinweis`) –
+ * sie bleiben gespeichert und kehren mit dem alten Raster zurück. Im
+ * Controlling lässt sich das Projekt im Dialog wählen (`projektWahl`).
  */
 import { useState } from 'react';
 import { addDays, today } from '../../../shared/dates';
 import { useToast } from '../../../shared/toast';
-import { Callout, Field, Modal, Segmented, TextInput } from '../../../shared/ui';
-import { leistungenIm, nachweisTitel, nachweiseVon, neuerNachweis, stundenVon, ueberschneidung } from '../domain/nachweis';
+import { Callout, Field, Modal, Segmented, Select, TextInput } from '../../../shared/ui';
+import {
+  leistungenIm,
+  nachweisTitel,
+  nachweiseVon,
+  neuerNachweis,
+  rasterwechselHinweis,
+  rasterwechselVerdeckt,
+  stundenVon,
+  ueberschneidung,
+} from '../domain/nachweis';
 import {
   RASTER_LABEL,
   newId,
@@ -40,27 +54,36 @@ function monatLesen(wert: string): string | null {
 }
 
 export function NachweisDialog({
-  projekt,
+  projekt: vorgabe,
   nachweis,
   onClose,
   navigate,
+  projektWahl = false,
+  ziel = 'nachweis',
 }: {
   projekt: Projekt;
   nachweis?: Leistungsnachweis;
   onClose: () => void;
   navigate?: (r: Route) => void;
+  /** Neuer Nachweis: das Projekt im Dialog wählen (Vorgabe `projekt`) – im Controlling. */
+  projektWahl?: boolean;
+  /** Wohin ein neuer Nachweis führt: in den Editor (Vorgabe) oder in die Abrechnung des Controllings. */
+  ziel?: 'nachweis' | 'abrechnung';
 }) {
   const { data, addNachweis, updateNachweis } = useStore();
   const toast = useToast();
   const abgeschlossen = nachweis?.status === 'abgeschlossen';
+  const waehlbar = projektWahl && !nachweis;
+  const [projektId, setProjektId] = useState(vorgabe.id);
+  const projekt = (waehlbar ? data.projekte.find((p) => p.id === projektId) : undefined) ?? vorgabe;
 
   // Vorschlag für einen neuen Nachweis: der laufende Monat, sonst der Monat nach dem letzten Nachweis
-  const vorschlag = () => {
+  const vorschlag = (p: Projekt = projekt) => {
     const heute = monatsanfang(today());
-    if (!ueberschneidung(data, projekt.id, heute, monatsende(heute))) return heute.slice(0, 7);
-    const letzter = nachweiseVon(data, projekt.id).at(-1);
+    if (!ueberschneidung(data, p.id, heute, monatsende(heute))) return heute.slice(0, 7);
+    const letzter = nachweiseVon(data, p.id).at(-1);
     const danach = letzter ? monatsanfang(addDays(letzter.bis, 1)) : heute;
-    return (ueberschneidung(data, projekt.id, danach, monatsende(danach)) ? heute : danach).slice(0, 7);
+    return (ueberschneidung(data, p.id, danach, monatsende(danach)) ? heute : danach).slice(0, 7);
   };
 
   const [art, setArt] = useState<Art>(() => (!nachweis || istMonat(nachweis.von, nachweis.bis) ? 'monat' : 'frei'));
@@ -69,6 +92,21 @@ export function NachweisDialog({
   const [bis, setBis] = useState(nachweis?.bis ?? '');
   const [raster, setRaster] = useState<Raster>(nachweis?.raster ?? projekt.raster);
   const [titel, setTitel] = useState(nachweis?.titel ?? '');
+
+  // Ein anderes Projekt bringt seine Vorgaben mit: Raster und vorgeschlagener Monat
+  const projektWechseln = (id: string) => {
+    const p = data.projekte.find((x) => x.id === id);
+    if (!p) return;
+    setProjektId(id);
+    setRaster(p.raster);
+    setMonat(vorschlag(p));
+  };
+  const projektOptionen = [...data.projekte]
+    .sort((a, b) => a.nummer.localeCompare(b.nummer, 'de', { numeric: true }) || a.name.localeCompare(b.name, 'de'))
+    .map((p) => ({ value: p.id, label: projektTitel(p) }));
+
+  // Rasterwechsel: Was von Hand bearbeitet wurde, verschwindet aus der Anzeige (bleibt aber gespeichert)
+  const rasterHinweis = nachweis ? rasterwechselHinweis(rasterwechselVerdeckt(nachweis, raster)) : null;
 
   const gewaehlt = monatLesen(monat);
   const zeitraum =
@@ -140,13 +178,13 @@ export function NachweisDialog({
     addNachweis(neu);
     toast(`„${nachweisTitel(neu)}“ angelegt.`);
     onClose();
-    navigate?.({ view: 'nachweis', projektId: projekt.id, nachweisId: id });
+    navigate?.({ view: ziel, projektId: projekt.id, nachweisId: id });
   };
 
   return (
     <Modal
       titel={nachweis ? 'Zeitraum ändern' : 'Neuer Leistungsnachweis'}
-      sub={projektTitel(projekt)}
+      sub={waehlbar ? 'Leistungsnachweis für ein Projekt' : projektTitel(projekt)}
       onClose={onClose}
       footer={
         <>
@@ -169,6 +207,11 @@ export function NachweisDialog({
       ) : (
         <div className="stack ln-nachweisdialog">
           <div className="form-grid">
+            {waehlbar ? (
+              <Field label="Projekt" full>
+                <Select value={projekt.id} onChange={projektWechseln} options={projektOptionen} />
+              </Field>
+            ) : null}
             <Field label="Zeitraum" full>
               <Segmented<Art>
                 value={art}
@@ -205,6 +248,11 @@ export function NachweisDialog({
             </Field>
           </div>
 
+          {rasterHinweis ? (
+            <Callout ton="warn" icon="!">
+              {rasterHinweis}
+            </Callout>
+          ) : null}
           {andere ? (
             <Callout ton="warn" icon="!">
               Der Zeitraum überschneidet sich mit „{nachweisTitel(andere)}“.

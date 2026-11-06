@@ -1,18 +1,23 @@
 /**
  * Reiter „Einstellungen“ eines Projekts: Vorgaben für den Kopf und die Zeilen
- * neuer Leistungsnachweise, die Abschnitte (eigene Stundenspalten unter
- * „Aufwand (Std)“) und die Logos im Druckkopf. Der Excel-Import ordnet
- * Leistungen über die Kennung des Projektelements einem Abschnitt zu.
+ * neuer Leistungsnachweise, die Abschnitte (ab zwei Abschnitten eigene
+ * Stundenspalten unter „Aufwand (Std)“, `mitAbschnittsspalten`) und die Logos
+ * im Druckkopf. Der Excel-Import ordnet Leistungen über die Kennung des
+ * Projektelements (Spalte J) einem Abschnitt zu und legt fehlende selbst an.
  * Abgeschlossene Nachweise behalten ihren festgeschriebenen Stand samt
- * Abschnitten.
+ * Abschnitten. Ändern darf jede angemeldete Person; ohne Anmeldung ist alles
+ * gesperrt.
  */
 import { useId, useState } from 'react';
 import { Icon } from '../../../../shared/icons';
 import { useToast } from '../../../../shared/toast';
-import { Card, CardHeader, ConfirmDialog, Field, Modal, Segmented, Select, TextInput } from '../../../../shared/ui';
+import { Callout, Card, CardHeader, ConfirmDialog, Field, Modal, Segmented, Select, TextInput } from '../../../../shared/ui';
+import { useAnmeldung } from '../../components/AnmeldeDialog';
 import { LogoVerwaltung } from '../../components/Logos';
 import { RASTER_OPTIONEN, REGEL_OPTIONEN, anzahl } from '../../components/common';
 import { abschnitteAusElementen, kennungNormal, projektelementTeilen } from '../../domain/import';
+import { mitAbschnittsspalten } from '../../domain/nachweis';
+import { angemeldet } from '../../domain/rechte';
 import {
   LEISTUNGSBEREICH_VORSCHLAEGE,
   newId,
@@ -26,13 +31,27 @@ import '../../components/leistungen.css';
 
 
 export function ProjektEinstellungen({ projekt }: { projekt: Projekt }) {
+  const { data } = useStore();
+  const anmeldung = useAnmeldung();
+  // Ohne Anmeldung nur ansehen – der Store ändert dann ohnehin nichts
+  const gesperrt = !angemeldet(data);
   // Ändert sich das Projekt von anderer Stelle (Dialog „Bearbeiten“), beginnt das Formular neu
   const stand = [projekt.leistungsbereich, projekt.kurzname, projekt.raster, projekt.zeitraumregel].join('\u0000');
   return (
     <div className="stack">
-      <NachweisVorgaben key={stand} projekt={projekt} />
-      <Abschnitte projekt={projekt} />
-      <LogoVerwaltung projekt={projekt} />
+      {gesperrt ? (
+        <Callout icon="i">
+          <div className="row-between wrap">
+            <span>Die Einstellungen des Projekts ändert jede angemeldete Person – bitte zuerst anmelden.</span>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => anmeldung()}>
+              Anmelden
+            </button>
+          </div>
+        </Callout>
+      ) : null}
+      <NachweisVorgaben key={stand} projekt={projekt} gesperrt={gesperrt} />
+      <Abschnitte projekt={projekt} gesperrt={gesperrt} />
+      <LogoVerwaltung projekt={projekt} gesperrt={gesperrt} />
     </div>
   );
 }
@@ -41,7 +60,7 @@ export function ProjektEinstellungen({ projekt }: { projekt: Projekt }) {
 /* Vorgaben für Leistungsnachweise                                     */
 /* ------------------------------------------------------------------ */
 
-function NachweisVorgaben({ projekt }: { projekt: Projekt }) {
+function NachweisVorgaben({ projekt, gesperrt }: { projekt: Projekt; gesperrt: boolean }) {
   const { updateProjekt } = useStore();
   const toast = useToast();
   const liste = useId();
@@ -71,7 +90,7 @@ function NachweisVorgaben({ projekt }: { projekt: Projekt }) {
   return (
     <Card>
       <CardHeader titel="Leistungsnachweis" sub="Kopf und Vorgaben für neue Leistungsnachweise dieses Projekts" />
-      <div className="card-pad">
+      <fieldset className="ln-fieldset card-pad" disabled={gesperrt}>
         <div className="form-grid ln-zweispaltig">
           <Field label="Leistungsbereich" hint="Steht im Kopf des Leistungsnachweises, etwa „Projektsteuerung“.">
             <TextInput
@@ -87,11 +106,11 @@ function NachweisVorgaben({ projekt }: { projekt: Projekt }) {
             </datalist>
           </Field>
           <Field label="Bezeichnung im Nachweis" hint={`Kopf des Leistungsnachweises; leer = Projektname „${projekt.name}“.`}>
-            <TextInput value={form.kurzname} onChange={(v) => set('kurzname', v)} placeholder={projekt.name || 'z. B. Hp Aalen-West'} />
+            <TextInput value={form.kurzname} onChange={(v) => set('kurzname', v)} placeholder={projekt.name || 'z. B. Hp Musterstadt'} />
           </Field>
           <Field
             label="Nachweis"
-            hint="Zeilen je Tag, Woche oder Monat – Vorgabe für neue Leistungsnachweise. Vorhandene behalten ihr Raster; es lässt sich dort unter „Zeitraum ändern“ umstellen."
+            hint="Zeilen je Tag, Woche oder Monat – Vorgabe für neue Leistungsnachweise. Vorhandene behalten ihr Raster; das Controlling stellt es dort unter „Zeitraum ändern“ um."
           >
             <Segmented<Raster> value={form.raster} onChange={(v) => set('raster', v)} options={RASTER_OPTIONEN} />
           </Field>
@@ -122,7 +141,7 @@ function NachweisVorgaben({ projekt }: { projekt: Projekt }) {
             Speichern
           </button>
         </div>
-      </div>
+      </fieldset>
     </Card>
   );
 }
@@ -131,7 +150,7 @@ function NachweisVorgaben({ projekt }: { projekt: Projekt }) {
 /* Abschnitte                                                          */
 /* ------------------------------------------------------------------ */
 
-function Abschnitte({ projekt }: { projekt: Projekt }) {
+function Abschnitte({ projekt, gesperrt }: { projekt: Projekt; gesperrt: boolean }) {
   const { data, updateProjekt, abschnitteAusProjektelementen } = useStore();
   const toast = useToast();
   const [dialog, setDialog] = useState<{ abschnitt?: Abschnitt } | null>(null);
@@ -142,6 +161,10 @@ function Abschnitte({ projekt }: { projekt: Projekt }) {
   const zahl = (a: Abschnitt) => leistungen.filter((l) => l.abschnittId === a.id).length;
   const ohne = leistungen.filter((l) => !l.abschnittId || !gueltig.has(l.abschnittId)).length;
   const mitElement = leistungen.some((l) => l.projektelement.trim());
+  const spalten = mitAbschnittsspalten(projekt.abschnitte);
+  const bearbeiten = (abschnitt: Abschnitt) => {
+    if (!gesperrt) setDialog({ abschnitt });
+  };
 
   const verschieben = (i: number, um: -1 | 1) => {
     const neu = [...projekt.abschnitte];
@@ -168,117 +191,122 @@ function Abschnitte({ projekt }: { projekt: Projekt }) {
 
   return (
     <Card className="ln-kopf-knoepfe">
-      <CardHeader
-        titel="Abschnitte"
-        sub={
-          projekt.abschnitte.length
-            ? `${anzahl(projekt.abschnitte.length, 'Abschnitt', 'Abschnitte')} · im Nachweis je eine Spalte unter „Aufwand (Std)“`
-            : 'Ohne Abschnitte zeigt der Nachweis eine Spalte „Stunden“'
-        }
-        actions={
-          <>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline"
-              onClick={ausElementen}
-              disabled={!mitElement}
-              title={
-                mitElement
-                  ? 'Für jede neue Kennung der Projektelemente einen Abschnitt anlegen und Leistungen ohne Abschnitt zuordnen'
-                  : 'Die Leistungen dieses Projekts nennen kein Projektelement'
-              }
-            >
-              Aus Projektelementen übernehmen
-            </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setDialog({})}>
-              <Icon name="plus" size={12} /> Abschnitt hinzufügen
-            </button>
-          </>
-        }
-      />
-      {projekt.abschnitte.length > 0 ? (
-        <div className="table-scroll">
-          <table className="table table-stack ln-ab-tabelle">
-            <thead>
-              <tr>
-                <th style={{ width: 90 }}>Kennung</th>
-                <th>Spaltenkopf</th>
-                <th>Bezeichnung</th>
-                <th className="col-optional">Leistungen</th>
-                <th className="actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {projekt.abschnitte.map((a, i) => (
-                <tr key={a.id} className="clickable" onClick={() => setDialog({ abschnitt: a })}>
-                  <td className="num">{a.kennung || '–'}</td>
-                  <td>
-                    <strong>{a.kurz}</strong>
-                  </td>
-                  <td className="small muted">{a.name || '–'}</td>
-                  <td className="small col-optional">{zahl(a) || <span className="tertiary">–</span>}</td>
-                  <td className="actions" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      disabled={i === 0}
-                      title="Nach vorn"
-                      aria-label="Abschnitt nach vorn"
-                      onClick={() => verschieben(i, -1)}
-                    >
-                      <Icon name="hoch" size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      disabled={i === projekt.abschnitte.length - 1}
-                      title="Nach hinten"
-                      aria-label="Abschnitt nach hinten"
-                      onClick={() => verschieben(i, 1)}
-                    >
-                      <Icon name="runter" size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      title="Abschnitt bearbeiten"
-                      aria-label="Abschnitt bearbeiten"
-                      onClick={() => setDialog({ abschnitt: a })}
-                    >
-                      <Icon name="bearbeiten" size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      title="Abschnitt löschen"
-                      aria-label="Abschnitt löschen"
-                      onClick={() => setLoeschen(a)}
-                    >
-                      <Icon name="loeschen" size={14} />
-                    </button>
-                  </td>
+      <fieldset className="ln-fieldset" disabled={gesperrt}>
+        <CardHeader
+          titel="Abschnitte"
+          sub={
+            spalten
+              ? `${anzahl(projekt.abschnitte.length, 'Abschnitt', 'Abschnitte')} · im Nachweis je eine Spalte unter „Aufwand (Std)“`
+              : projekt.abschnitte.length
+                ? '1 Abschnitt · der Nachweis zeigt eine Spalte „Stunden“ – eigene Spalten erst ab zwei Abschnitten'
+                : 'Ohne Abschnitte zeigt der Nachweis eine Spalte „Stunden“'
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                onClick={ausElementen}
+                disabled={!mitElement}
+                title={
+                  mitElement
+                    ? 'Für jede neue Kennung der Projektelemente einen Abschnitt anlegen und Leistungen ohne Abschnitt zuordnen'
+                    : 'Die Leistungen dieses Projekts nennen kein Projektelement'
+                }
+              >
+                Aus Projektelementen übernehmen
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => setDialog({})}>
+                <Icon name="plus" size={12} /> Abschnitt hinzufügen
+              </button>
+            </>
+          }
+        />
+        {projekt.abschnitte.length > 0 ? (
+          <div className="table-scroll">
+            <table className="table table-stack ln-ab-tabelle">
+              <thead>
+                <tr>
+                  <th style={{ width: 90 }}>Kennung</th>
+                  <th>Spaltenkopf</th>
+                  <th>Bezeichnung</th>
+                  <th className="col-optional">Leistungen</th>
+                  <th className="actions" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-      <div className={`small tertiary ${projekt.abschnitte.length ? 'ln-ab-hinweis' : 'card-pad'}`}>
-        {projekt.abschnitte.length === 0 ? (
-          <p style={{ marginBottom: 6 }}>
-            Mit Abschnitten – etwa Streckenabschnitten – weist der Nachweis die Stunden je Abschnitt in eigenen Spalten aus,
-            wie „Abschn.1“ bis „Abschn.6“ im Wochennachweis.
-          </p>
+              </thead>
+              <tbody>
+                {projekt.abschnitte.map((a, i) => (
+                  <tr key={a.id} className={gesperrt ? '' : 'clickable'} onClick={() => bearbeiten(a)}>
+                    <td className="num">{a.kennung || '–'}</td>
+                    <td>
+                      <strong>{a.kurz}</strong>
+                    </td>
+                    <td className="small muted">{a.name || '–'}</td>
+                    <td className="small col-optional">{zahl(a) || <span className="tertiary">–</span>}</td>
+                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        disabled={i === 0}
+                        title="Nach vorn"
+                        aria-label="Abschnitt nach vorn"
+                        onClick={() => verschieben(i, -1)}
+                      >
+                        <Icon name="hoch" size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        disabled={i === projekt.abschnitte.length - 1}
+                        title="Nach hinten"
+                        aria-label="Abschnitt nach hinten"
+                        onClick={() => verschieben(i, 1)}
+                      >
+                        <Icon name="runter" size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        title="Abschnitt bearbeiten"
+                        aria-label="Abschnitt bearbeiten"
+                        onClick={() => bearbeiten(a)}
+                      >
+                        <Icon name="bearbeiten" size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        title="Abschnitt löschen"
+                        aria-label="Abschnitt löschen"
+                        onClick={() => setLoeschen(a)}
+                      >
+                        <Icon name="loeschen" size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
-        <p>
-          Der Excel-Import ordnet Leistungen über die Kennung des Projektelements zu: „01: Neustadt Nord, Strecke 3436“
-          gehört zum Abschnitt mit der Kennung „01“. „Aus Projektelementen übernehmen“ legt für jede neue Kennung einen
-          Abschnitt an und ordnet Leistungen ohne Abschnitt zu.
-          {projekt.abschnitte.length > 0 && ohne > 0
-            ? ` ${anzahl(ohne, 'Leistung steht', 'Leistungen stehen')} ohne Abschnitt – im Nachweis in der Spalte „ohne“.`
-            : ''}
-        </p>
-      </div>
+        <div className={`small tertiary ${projekt.abschnitte.length ? 'ln-ab-hinweis' : 'card-pad'}`}>
+          {projekt.abschnitte.length === 0 ? (
+            <p style={{ marginBottom: 6 }}>
+              Mit Abschnitten – etwa Streckenabschnitten – weist der Nachweis die Stunden je Abschnitt in eigenen Spalten aus,
+              wie „Abschn.1“ bis „Abschn.6“ im Wochennachweis; das gilt ab zwei Abschnitten.
+            </p>
+          ) : null}
+          <p>
+            Der Excel-Import ordnet Leistungen über die Kennung des Projektelements (Spalte J) zu: „01: Nordheim,
+            Strecke 9401“ gehört zum Abschnitt mit der Kennung „01“; fehlende Abschnitte legt er selbst an. „Aus
+            Projektelementen übernehmen“ legt für Leistungen früherer Importe je neue Kennung einen Abschnitt an und ordnet
+            Leistungen ohne Abschnitt zu.
+            {spalten && ohne > 0
+              ? ` ${anzahl(ohne, 'Leistung steht', 'Leistungen stehen')} ohne Abschnitt – im Nachweis in der Spalte „ohne“.`
+              : ''}
+          </p>
+        </div>
+      </fieldset>
 
       {dialog ? <AbschnittDialog projekt={projekt} abschnitt={dialog.abschnitt} onClose={() => setDialog(null)} /> : null}
 
@@ -381,8 +409,8 @@ function AbschnittDialog({ projekt, abschnitt, onClose }: { projekt: Projekt; ab
         <Field label="Kennung" hint="Nummer vor dem Doppelpunkt im Projektelement, etwa „01“ – daran ordnet der Import zu.">
           <TextInput value={form.kennung} onChange={(v) => set('kennung', v)} placeholder="01" />
         </Field>
-        <Field label="Bezeichnung" full hint="Erscheint als Hinweis zur Spalte, etwa „Neustadt Nord, Strecke 3436“.">
-          <TextInput value={form.name} onChange={(v) => set('name', v)} placeholder="z. B. Neustadt Nord, Strecke 3436" />
+        <Field label="Bezeichnung" full hint="Erscheint als Hinweis zur Spalte, etwa „Nordheim, Strecke 9401“.">
+          <TextInput value={form.name} onChange={(v) => set('name', v)} placeholder="z. B. Nordheim, Strecke 9401" />
         </Field>
       </div>
     </Modal>

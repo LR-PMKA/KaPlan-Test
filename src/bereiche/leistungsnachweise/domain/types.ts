@@ -126,21 +126,21 @@ export interface Abschnitt {
   id: ID;
   /**
    * Kennung zum Zuordnen beim Import: die Nummer vor dem Doppelpunkt der
-   * Spalte „Projektelement“, etwa „01“ für „01: Neustadt Nord, Strecke 3436“.
+   * Spalte „Projektelement“, etwa „01“ für „01: Nordheim, Strecke 9401“.
    */
   kennung: string;
   /** Spaltenkopf im Nachweis, etwa „Abschn.1“. */
   kurz: string;
-  /** Vollständige Bezeichnung, etwa „Neustadt Nord, Strecke 3436“. */
+  /** Vollständige Bezeichnung, etwa „Nordheim, Strecke 9401“. */
   name: string;
 }
 
 export interface Projekt {
   id: ID;
-  /** Projektnummer, etwa „K2476“ – daran erkennt der Import das Projekt. */
+  /** Projektnummer, etwa „K9101“ – daran erkennt der Import das Projekt. */
   nummer: string;
   name: string;
-  /** Bezeichnung im Kopf des Nachweises, etwa „Hp Aalen-West“; leer = `name`. */
+  /** Bezeichnung im Kopf des Nachweises, etwa „Hp Musterstadt“; leer = `name`. */
   kurzname: string;
   status: ProjektStatus;
   /** Markierte Projekte erscheinen in der Übersicht und in der Seitenleiste. */
@@ -161,7 +161,7 @@ export function projektKurzname(p: { name: string; kurzname: string }): string {
   return p.kurzname.trim() || p.name;
 }
 
-/** „K2476 PS / PLM, Neubau Hp Aalen West“ */
+/** „K9101 PS / PLM, Neubau Hp Musterstadt“ */
 export function projektTitel(p: { nummer: string; name: string }): string {
   return [p.nummer, p.name].filter(Boolean).join(' ');
 }

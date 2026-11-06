@@ -1,33 +1,43 @@
 /**
- * Druckfassung eines Leistungsnachweises als HTML-Text – nach dem Vorbild der
- * Excel-Vorlagen von Mailänder Consult: oben „Leistungsnachweis“ mit dem
- * Zeitraum, Projekt und Leistungsbereich, rechts die Logos; darunter die
- * Tabelle mit Datum, Bearbeitern, Leistungstext und Stunden – bei Projekten
- * mit Abschnitten statt „Stunden“ die Gruppe „Aufwand (Std)“ mit einer Spalte
- * je Abschnitt. Am Ende Summe, Gesamtstunden, Bemerkung und „geprüft und
- * freigegeben“.
+ * Druckfassung eines Leistungsnachweises als HTML-Text – im Stil der
+ * PDF-Kurzfassung des Planlaufmanagements (`EXPORT_STIL`, `exportHtml` in
+ * src/bereiche/planlauf/domain/export.ts und `druckeHtml` in
+ * src/shared/print.ts): oben der Kopf mit „<Nummer> · <Projekt>“, darunter
+ * eine graue Meta-Zeile mit Zeitraum, Leistungsbereich, Raster und Stand,
+ * rechts die Logos; darunter die Tabelle mit grauen Großbuchstaben-Köpfen und
+ * feinen Trennlinien statt Gitter – Datum, Bearbeiter, Leistungstext und
+ * Stunden, ab zwei Abschnitten statt „Stunden“ die Gruppe „Aufwand (Std)“ mit
+ * einer Spalte je Abschnitt (`mitAbschnittsspalten`). Am Ende Summe,
+ * Gesamtstunden, Bemerkung, „geprüft und freigegeben“ mit Linien für Datum
+ * und Unterschrift und der Fuß „Erzeugt mit KaPlan am …“.
  *
- * Derselbe Text erscheint in der Druckansicht der Seite und im Druckdialog
- * des Browsers – dort lässt sich „Als PDF sichern“ wählen. Abgeschlossene
+ * Druck und Excel zeigen die abgerechneten Stunden (erfasst plus Aufschlag
+ * des Controllings); der Aufschlag selbst erscheint nicht. Abgeschlossene
  * Nachweise zeigen ihren festgeschriebenen Stand (`nachweisFassung`); die
- * Excel-Ausgabe (domain/export.ts) nutzt dieselbe Fassung.
+ * Excel-Ausgabe (domain/export.ts) nutzt dieselbe Fassung. Lange Nachweise
+ * laufen über mehrere Seiten, der Tabellenkopf wiederholt sich, Zeilen
+ * brechen nicht.
  */
+import { formatDate, today } from '../../../shared/dates';
 import { druckeHtml } from '../../../shared/print';
-import { bearbeiterVon, nachweisTitel, summeStunden, zeilenFuerAnzeige } from './nachweis';
+import { bearbeiterVon, mitAbschnittsspalten, nachweisSummen, nachweisTitel, tagVon, zeilenFuerAnzeige } from './nachweis';
 import { logosVon } from './seed';
 import {
   OHNE_ABSCHNITT,
+  RASTER_LABEL,
   kuerzelAus,
   mitarbeiterName,
   projektKurzname,
   type ID,
+  type ISODate,
   type Leistungsnachweis,
   type LeistungsnachweisDaten,
   type Logo,
   type NachweisZeile,
   type Projekt,
+  type Raster,
 } from './types';
-import { monatsanfang, monatsende, runden, stundenText } from './zeitraum';
+import { langDatum, monatsanfang, monatsende, runden, stundenText } from './zeitraum';
 
 /** Maskiert Text für HTML – auch in Attributen. */
 export function esc(wert: string | number | null | undefined): string {
@@ -51,7 +61,14 @@ export function logoQuelle(src: string): string {
 /* Fassung für Druck und Excel                                         */
 /* ------------------------------------------------------------------ */
 
-/** Spalte der Stunden bei Projekten mit Abschnitten: ein Abschnitt, „ohne“ Abschnitt oder „Gesamt“. */
+/**
+ * Welche Stunden eine Fassung zeigt: die erfassten (so sehen alle den
+ * gemeinsamen Nachweis) oder die abgerechneten – erfasst plus Aufschlag; so
+ * stehen sie in Druck und Excel.
+ */
+export type FassungWerte = 'erfasst' | 'abgerechnet';
+
+/** Spalte der Stunden bei Projekten mit Abschnittsspalten: ein Abschnitt, „ohne“ Abschnitt oder „Gesamt“. */
 export interface StundenSpalte {
   /** Abschnitts-ID, `OHNE_ABSCHNITT` oder `GESAMT`. */
   schluessel: string;
@@ -69,26 +86,41 @@ export interface FassungMitarbeiter {
   id: ID;
   kuerzel: string;
   name: string;
+  /** Erfasste Stunden der Person – Aufschläge gehören der Zeile, nicht einer Person. */
   stunden: number;
 }
 
 /** Was Druck und Excel-Datei zeigen. */
 export interface NachweisFassung {
+  /** Erfasste oder abgerechnete Stunden in `spaltenStunden`, `summen` und `summe`. */
+  werte: FassungWerte;
   /** Vollständige Überschrift, etwa „Leistungsnachweis Oktober 2026“. */
   titel: string;
   /** Überschrift in zwei Teilen wie in der Vorlage: „Leistungsnachweis“ | „Oktober 2026“; ohne zweiten Teil steht `titelLinks` allein. */
   titelLinks: string;
   titelRechts: string;
+  /** Die Überschrift ist von Hand vergeben (nicht „Leistungsnachweis <Zeitraum>“). */
+  titelEigen: boolean;
   /** Bezeichnung des Projekts im Kopf (Kurzname). */
   projektName: string;
   projektNummer: string;
   leistungsbereich: string;
+  von: ISODate;
+  bis: ISODate;
+  raster: Raster;
+  /** Datum des Stands: der Tag des Abschlusses, sonst heute. */
+  standDatum: ISODate;
   zeilen: NachweisZeile[];
-  /** Spalten der Stunden: je Abschnitt, „ohne“ (falls nötig) und „Gesamt“; leer, wenn das Projekt keine Abschnitte hat. */
+  /** Spalten der Stunden: je Abschnitt, „ohne“ (falls nötig) und „Gesamt“; leer unter zwei Abschnitten (`mitAbschnittsspalten`). */
   spalten: StundenSpalte[];
-  /** Summen je Spalte (Schlüssel wie in `spalten`). */
+  /** Summen je Spalte (Schlüssel wie in `spalten`), in der Art von `werte`. */
   summen: Record<string, number>;
+  /** Summe der Stunden in der Art von `werte`. */
   summe: number;
+  /** Erfasste Stunden, Aufschlag und abgerechnete Stunden des ganzen Nachweises. */
+  erfasst: number;
+  aufschlag: number;
+  abgerechnet: number;
   bearbeiter: string[];
   /** Personen in der Reihenfolge ihres ersten Auftretens. */
   mitarbeiter: FassungMitarbeiter[];
@@ -96,17 +128,29 @@ export interface NachweisFassung {
   abgeschlossen: boolean;
 }
 
-/** Stunden einer Zeile in einer Spalte (`GESAMT` = alle). */
-export function spaltenStunden(z: NachweisZeile, schluessel: string): number {
+/** Stunden einer Zeile in einer Spalte (`GESAMT` = alle) – erfasst (Vorgabe) oder abgerechnet. */
+export function spaltenStunden(z: NachweisZeile, schluessel: string, werte: FassungWerte = 'erfasst'): number {
+  if (werte === 'abgerechnet') {
+    return schluessel === GESAMT ? (z.abgerechnet ?? z.stunden) : ((z.abgerechnetJeAbschnitt ?? z.stundenJeAbschnitt)[schluessel] ?? 0);
+  }
   return schluessel === GESAMT ? z.stunden : (z.stundenJeAbschnitt[schluessel] ?? 0);
 }
 
 /**
  * Druck- und Excel-Fassung eines Nachweises: bei abgeschlossenen Nachweisen
  * aus dem festgeschriebenen Stand (Zeilen, Abschnitte, Projektangaben,
- * Überschrift), sonst aus den aktuellen Leistungen.
+ * Überschrift), sonst aus den aktuellen Leistungen. `werte` wählt erfasste
+ * (Vorgabe – so sehen alle den gemeinsamen Nachweis) oder abgerechnete
+ * Stunden (Druck und Excel). Abschnittsspalten erst ab zwei Abschnitten; die
+ * Spalte „ohne“ nur, wenn sie Stunden hat – auch solche, die allein ein
+ * Aufschlag füllt.
  */
-export function nachweisFassung(daten: LeistungsnachweisDaten, n: Leistungsnachweis, projekt: Projekt): NachweisFassung {
+export function nachweisFassung(
+  daten: LeistungsnachweisDaten,
+  n: Leistungsnachweis,
+  projekt: Projekt,
+  werte: FassungWerte = 'erfasst',
+): NachweisFassung {
   const stand = n.status === 'abgeschlossen' ? n.stand : null;
   const zeilen = zeilenFuerAnzeige(daten, n);
   const kopf = stand?.projekt ?? projekt;
@@ -118,15 +162,18 @@ export function nachweisFassung(daten: LeistungsnachweisDaten, n: Leistungsnachw
 
   const abschnitte = stand?.abschnitte ?? projekt.abschnitte;
   const spalten: StundenSpalte[] = [];
-  if (abschnitte.length > 0) {
+  if (mitAbschnittsspalten(abschnitte)) {
     spalten.push(...abschnitte.map((a) => ({ schluessel: a.id, kurz: a.kurz || a.kennung || a.name, name: a.name })));
-    if (zeilen.some((z) => (z.stundenJeAbschnitt[OHNE_ABSCHNITT] ?? 0) !== 0)) {
+    if (zeilen.some((z) => spaltenStunden(z, OHNE_ABSCHNITT, werte) !== 0)) {
       spalten.push({ schluessel: OHNE_ABSCHNITT, kurz: 'ohne', name: 'Leistungen ohne Abschnitt' });
     }
     spalten.push({ schluessel: GESAMT, kurz: 'Gesamt', name: 'Stunden gesamt' });
   }
   const summen = Object.fromEntries(
-    spalten.map((s) => [s.schluessel, runden(zeilen.reduce((sum, z) => sum + spaltenStunden(z, s.schluessel), 0))]),
+    spalten.map((s) => [s.schluessel, runden(zeilen.reduce((sum, z) => sum + spaltenStunden(z, s.schluessel, werte), 0))]),
+  );
+  const { erfasst, aufschlag, abgerechnet } = nachweisSummen(
+    zeilen.map((z) => ({ stunden: z.stunden, aufschlag: z.aufschlag ?? 0, abgerechnet: z.abgerechnet ?? z.stunden })),
   );
 
   const personen = new Map<ID, number>();
@@ -140,16 +187,25 @@ export function nachweisFassung(daten: LeistungsnachweisDaten, n: Leistungsnachw
   });
 
   return {
+    werte,
     titel,
     titelLinks: geteilt ? praefix.trim() : titel,
     titelRechts: geteilt ? titel.slice(praefix.length) : '',
+    titelEigen: titel !== nachweisTitel({ titel: '', von: n.von, bis: n.bis }),
     projektName: projektKurzname(kopf),
     projektNummer: kopf.nummer,
     leistungsbereich: kopf.leistungsbereich,
+    von: n.von,
+    bis: n.bis,
+    raster: n.raster,
+    standDatum: stand && n.abgeschlossen ? tagVon(n.abgeschlossen) : today(),
     zeilen,
     spalten,
     summen,
-    summe: summeStunden(zeilen),
+    summe: werte === 'abgerechnet' ? abgerechnet : erfasst,
+    erfasst,
+    aufschlag,
+    abgerechnet,
     bearbeiter: bearbeiterVon(zeilen),
     mitarbeiter,
     bemerkung: n.bemerkung,
@@ -161,7 +217,7 @@ export function nachweisFassung(daten: LeistungsnachweisDaten, n: Leistungsnachw
 const monatTeil = (datum: string) => datum.slice(0, 7);
 
 /**
- * Dateiname ohne Endung, etwa „Leistungsnachweis_K2476_2026-10“ (ein Monat),
+ * Dateiname ohne Endung, etwa „Leistungsnachweis_K9101_2026-10“ (ein Monat),
  * „…_2026-06_bis_2026-10“ (volle Monate) oder „…_2026-06-15_bis_2026-10-31“.
  * Ohne Umlaute und Sonderzeichen – manche Browser verwerfen sonst den Namen.
  */
@@ -205,14 +261,23 @@ const ENG_AB = 5;
  * „Gesamt“ – der Leistungstext erhält den Rest.
  */
 function breiten(spaltenzahl: number): { datum: number; bearbeiter: number; stunden: number; gesamt: number } {
-  if (spaltenzahl === 0) return { datum: 18, bearbeiter: 17, stunden: 9, gesamt: 9 };
-  if (spaltenzahl < ENG_AB) return { datum: 18, bearbeiter: 15, stunden: 8, gesamt: 9 };
-  const stunden = Math.max(5.5, Math.min(7, 36 / spaltenzahl));
-  return { datum: 16, bearbeiter: 12, stunden, gesamt: stunden + 1.5 };
+  if (spaltenzahl === 0) return { datum: 15, bearbeiter: 17, stunden: 10, gesamt: 10 };
+  if (spaltenzahl < ENG_AB) return { datum: 14, bearbeiter: 15, stunden: 9, gesamt: 9.5 };
+  // Eng: Spalten so breit, dass „Abschn.“ in eine Zeile passt
+  const stunden = Math.max(6, Math.min(7.5, 42 / spaltenzahl));
+  return { datum: 11, bearbeiter: 12.5, stunden, gesamt: stunden + 1.5 };
 }
 
 /** Spaltenkopf eines Abschnitts: Umbruch nach dem Punkt erlaubt („Abschn.“ / „1“). */
 const abschnittKopf = (kurz: string) => esc(kurz).replace(/\./g, '.<wbr>');
+
+/** Spalte „Datum“: „KW 44“ oben, die Tage darunter grau – wie die zweizeiligen Zellen der Planlauf-Kurzfassung. */
+function datumZelle(text: string): string {
+  const [oben, ...rest] = text.split('\n');
+  return rest.length
+    ? `<div class="ln-doc-kw">${esc(oben)}</div><div class="klein grau">${rest.map(esc).join('<br>')}</div>`
+    : `<span class="ln-doc-tage">${esc(oben)}</span>`;
+}
 
 function logosHtml(logos: Logo[]): string {
   if (logos.length === 0) return '';
@@ -221,24 +286,33 @@ function logosHtml(logos: Logo[]): string {
     .join('')}</div>`;
 }
 
-/** Druckfassung des Nachweises (A4 hoch). */
+/** Meta-Zeile unter der Überschrift: „Leistungsnachweis Oktober 2026 · Projektsteuerung · Monatsscharf · Stand 06.11.2026“. */
+export function nachweisMeta(f: Pick<NachweisFassung, 'titel' | 'titelEigen' | 'von' | 'bis' | 'leistungsbereich' | 'raster' | 'standDatum'>): string {
+  return [
+    f.titel,
+    f.titelEigen ? `${langDatum(f.von)} – ${langDatum(f.bis)}` : '',
+    f.leistungsbereich,
+    RASTER_LABEL[f.raster],
+    `Stand ${formatDate(f.standDatum)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Druckfassung des Nachweises (A4 hoch) mit den abgerechneten Stunden. */
 export function nachweisHtml(daten: LeistungsnachweisDaten, n: Leistungsnachweis, projekt: Projekt): string {
-  const f = nachweisFassung(daten, n, projekt);
+  const f = nachweisFassung(daten, n, projekt, 'abgerechnet');
   const mitAbschnitten = f.spalten.length > 0;
   const b = breiten(f.spalten.length);
-  const stundenSpalten = mitAbschnitten ? f.spalten.length : 1;
-  const spaltenzahl = 3 + stundenSpalten;
+  const spaltenzahl = 3 + (mitAbschnitten ? f.spalten.length : 1);
+  const gesamt = (s: StundenSpalte) => (s.schluessel === GESAMT ? ' ln-doc-gesamtspalte' : '');
 
-  // Die Kopfspalten folgen den Tabellenspalten, werden aber nie schmaler als ihr längstes Wort.
-  const kopf = `<header class="ln-doc-kopf" style="grid-template-columns: minmax(min-content, ${b.datum}%) minmax(min-content, ${b.bearbeiter}%) minmax(0, 1fr) auto">
-      ${
-        f.titelRechts
-          ? `<div class="ln-doc-k">${esc(f.titelLinks)}</div><div class="ln-doc-k">${esc(f.titelRechts)}</div>`
-          : `<div class="ln-doc-k ln-doc-k-breit">${esc(f.titelLinks)}</div>`
-      }
-      <div class="ln-doc-k">${esc(f.projektName)}${f.projektNummer ? `<span class="ln-doc-nr">${esc(f.projektNummer)}</span>` : ''}</div>
+  const kopf = `<header class="kopf ln-doc-kopf">
+      <div class="ln-doc-kopftext">
+        <h1>${esc([f.projektNummer, f.projektName].filter(Boolean).join(' · '))}</h1>
+        <div class="meta">${esc(nachweisMeta(f))}</div>
+      </div>
       ${logosHtml(logosVon(projekt))}
-      <div class="ln-doc-k">Leistungsbereich</div><div></div><div class="ln-doc-k">${esc(f.leistungsbereich)}</div>
     </header>`;
 
   const spalten = `<colgroup><col style="width:${b.datum}%"><col style="width:${b.bearbeiter}%"><col>${
@@ -250,31 +324,23 @@ export function nachweisHtml(daten: LeistungsnachweisDaten, n: Leistungsnachweis
   const tabellenkopf = mitAbschnitten
     ? `<tr><th rowspan="2">Datum</th><th rowspan="2">Bearbeiter</th><th rowspan="2">Leistungstext</th><th colspan="${
         f.spalten.length
-      }" class="ln-doc-mitte">Aufwand (Std)</th></tr>
+      }" class="ln-doc-gruppe">Aufwand (Std)</th></tr>
       <tr>${f.spalten
-        .map(
-          (s) =>
-            `<th class="ln-doc-abschnitt${s.schluessel === GESAMT ? ' ln-doc-gesamtspalte' : ''}" title="${esc(s.name)}">${abschnittKopf(s.kurz)}</th>`,
-        )
+        .map((s) => `<th class="num ln-doc-abschnitt${gesamt(s)}" title="${esc(s.name)}">${abschnittKopf(s.kurz)}</th>`)
         .join('')}</tr>`
-    : '<tr><th>Datum</th><th>Bearbeiter</th><th>Leistungstext</th><th class="ln-doc-mitte">Stunden</th></tr>';
+    : '<tr><th>Datum</th><th>Bearbeiter</th><th>Leistungstext</th><th class="num">Stunden</th></tr>';
 
   const stundenZellen = (z: NachweisZeile) =>
     mitAbschnitten
-      ? f.spalten
-          .map(
-            (s) =>
-              `<td class="ln-doc-std${s.schluessel === GESAMT ? ' ln-doc-gesamtspalte' : ''}">${zelle(spaltenStunden(z, s.schluessel))}</td>`,
-          )
-          .join('')
-      : `<td class="ln-doc-std">${zelle(z.stunden)}</td>`;
+      ? f.spalten.map((s) => `<td class="num${gesamt(s)}">${zelle(spaltenStunden(z, s.schluessel, f.werte))}</td>`).join('')
+      : `<td class="num">${zelle(spaltenStunden(z, GESAMT, f.werte))}</td>`;
 
   const zeilen = f.zeilen.length
     ? f.zeilen
         .map(
           (z) => `<tr>
-          <td class="ln-doc-dat">${mehrzeilig(z.datumText)}</td>
-          <td class="ln-doc-bea">${z.bearbeiter.map(esc).join('<br>')}</td>
+          <td class="ln-doc-dat">${datumZelle(z.datumText)}</td>
+          <td class="ln-doc-bea klein">${z.bearbeiter.map(esc).join('<br>')}</td>
           <td class="ln-doc-txt">${mehrzeilig(z.text)}</td>
           ${stundenZellen(z)}
         </tr>`,
@@ -283,26 +349,29 @@ export function nachweisHtml(daten: LeistungsnachweisDaten, n: Leistungsnachweis
     : `<tr><td colspan="${spaltenzahl}" class="ln-doc-leer">Keine Leistungen im Zeitraum.</td></tr>`;
 
   const summen = mitAbschnitten
-    ? f.spalten
-        .map((s) => `<td class="ln-doc-std${s.schluessel === GESAMT ? ' ln-doc-gesamtspalte' : ''}">${stundenText(f.summen[s.schluessel] ?? 0)}</td>`)
-        .join('')
-    : `<td class="ln-doc-std">${stundenText(f.summe)}</td>`;
-  const gesamt = `${mitAbschnitten ? '<td></td>'.repeat(f.spalten.length - 1) : ''}<td class="ln-doc-std">${stundenText(f.summe)}</td>`;
+    ? f.spalten.map((s) => `<td class="num${gesamt(s)}">${stundenText(f.summen[s.schluessel] ?? 0)}</td>`).join('')
+    : `<td class="num">${stundenText(f.summe)}</td>`;
 
   return `<article class="ln-doc">
     ${kopf}
-    <table class="ln-doc-tab${f.spalten.length >= ENG_AB ? ' ln-doc-eng' : ''}">
+    <table class="liste ln-doc-tab${f.spalten.length >= ENG_AB ? ' ln-doc-eng' : ''}">
       ${spalten}
       <thead>${tabellenkopf}</thead>
       <tbody>${zeilen}</tbody>
-      <tbody class="ln-doc-fuss">
+      <tbody class="ln-doc-summen">
         <tr class="ln-doc-summe"><td></td><td></td><td class="ln-doc-rechts">Summe</td>${summen}</tr>
-        <tr class="ln-doc-abstand"><td colspan="${spaltenzahl}"></td></tr>
-        <tr class="ln-doc-gesamt"><td></td><td></td><td>Gesamtstunden</td>${gesamt}</tr>
       </tbody>
     </table>
-    ${f.bemerkung.trim() ? `<div class="ln-doc-bemerkung"><b>Bemerkung</b><p>${mehrzeilig(f.bemerkung.trim())}</p></div>` : ''}
-    <p class="ln-doc-freigabe">geprüft und freigegeben  ______________________</p>
+    <div class="ln-doc-gesamt"><span>Gesamtstunden</span><strong>${stundenText(f.summe)}</strong></div>
+    ${f.bemerkung.trim() ? `<div class="ln-doc-bemerkung"><h2>Bemerkung</h2><p>${mehrzeilig(f.bemerkung.trim())}</p></div>` : ''}
+    <div class="ln-doc-freigabe">
+      <div class="ln-doc-freigabe-titel">geprüft und freigegeben</div>
+      <div class="ln-doc-unterschrift">
+        <div><div class="ln-doc-linie"></div><span>Datum</span></div>
+        <div><div class="ln-doc-linie"></div><span>Unterschrift</span></div>
+      </div>
+    </div>
+    <p class="fuss">Erzeugt mit KaPlan am ${esc(formatDate(today()))}.</p>
   </article>`;
 }
 
@@ -311,70 +380,77 @@ export function nachweisHtml(daten: LeistungsnachweisDaten, n: Leistungsnachweis
 /* ------------------------------------------------------------------ */
 
 /**
- * Gestaltung des Blatts – gilt in der Druckansicht der Seite und im Druck.
- * Schwarz auf Weiß mit dünnen Rahmenlinien und grau hinterlegtem
- * Tabellenkopf wie in der Excel-Vorlage; feste Farben, damit Druck und
- * Bildschirm übereinstimmen (auch im Farbmodus „kontrast“).
+ * Gestaltung des Blatts – gilt in der Vorschau der Seite und im Druck. Sie
+ * übernimmt Schrift, Farben und Tabellenstil der Planlauf-Kurzfassung (die
+ * Grundgestaltung aus `druckeHtml` und `EXPORT_STIL`), hier auf `.ln-doc`
+ * beschränkt, damit sie in der Vorschau nichts anderes berührt. Feste Farben,
+ * damit Druck und Bildschirm übereinstimmen (auch im Farbmodus „kontrast“).
  */
 export const DRUCK_STIL = `
-.ln-doc { color: #000; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.35; letter-spacing: 0; }
+.ln-doc { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 9pt;
+  color: #1d1d1f; line-height: 1.4; letter-spacing: -0.01em; text-align: left; }
+.ln-doc * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
 .ln-doc p { margin: 0; }
-.ln-doc table { width: 100%; border-collapse: collapse; margin: 0; table-layout: fixed; }
-.ln-doc th, .ln-doc td { position: static; box-shadow: none; text-transform: none; letter-spacing: 0; white-space: normal;
-  color: #000; font-size: inherit; overflow-wrap: anywhere; }
-.ln-doc .ln-doc-kopf { display: grid; align-items: start; row-gap: 4px; margin: 0 0 26px; font-size: 13.5px; }
-.ln-doc .ln-doc-k { font-weight: 700; padding-right: 8px; min-width: 0; }
-.ln-doc .ln-doc-k-breit { grid-column: 1 / span 2; }
-.ln-doc .ln-doc-nr { display: block; font-weight: 400; font-size: 11px; color: #3c3c3c; margin-top: 1px; }
-.ln-doc .ln-doc-logos { grid-column: 4; grid-row: 1 / span 2; display: flex; gap: 14px; align-items: center;
-  justify-content: flex-end; flex-wrap: wrap; padding-left: 12px; }
-.ln-doc .ln-doc-logos img { max-height: 42px; max-width: 190px; object-fit: contain; display: block; }
-.ln-doc .ln-doc-tab th { background: #c0c0c0; font-weight: 700; text-align: left; vertical-align: middle;
-  border: 1px solid #000; padding: 6px 6px; }
-.ln-doc .ln-doc-tab thead tr:first-child th { border-top-width: 1.5px; }
-.ln-doc .ln-doc-tab th.ln-doc-mitte { text-align: center; }
-.ln-doc .ln-doc-tab th.ln-doc-abschnitt { background: #d9d9d9; font-weight: 400; font-size: 11px; text-align: center; padding: 4px 2px; overflow-wrap: normal; }
-.ln-doc .ln-doc-tab th.ln-doc-gesamtspalte { font-weight: 700; }
-.ln-doc .ln-doc-tab td { border: 1px solid #000; padding: 5px 6px; vertical-align: top; }
-.ln-doc .ln-doc-tab tbody tr { break-inside: avoid; page-break-inside: avoid; }
-.ln-doc .ln-doc-dat { white-space: pre-line; }
-.ln-doc .ln-doc-bea { font-weight: 700; }
-.ln-doc .ln-doc-txt { white-space: pre-wrap; }
-.ln-doc .ln-doc-std { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; padding-left: 2px; padding-right: 2px; }
-.ln-doc .ln-doc-tab td.ln-doc-gesamtspalte { font-weight: 700; }
-.ln-doc .ln-doc-eng { font-size: 11px; }
-.ln-doc .ln-doc-eng td { padding: 4px 4px; }
-.ln-doc .ln-doc-eng th.ln-doc-abschnitt { font-size: 9.5px; padding: 3px 1px; }
-.ln-doc .ln-doc-eng td.ln-doc-std { padding: 4px 1px; }
-.ln-doc .ln-doc-leer { color: #5b6672; text-align: center; padding: 14px 6px; }
+.ln-doc .klein { font-size: 8.5pt; }
+.ln-doc .grau { color: #8e8e93; }
+.ln-doc .kopf { display: flex; align-items: flex-end; justify-content: space-between; gap: 6mm;
+  border-bottom: 1px solid #c7c7cc; padding-bottom: 3mm; margin: 0 0 5mm; }
+.ln-doc .ln-doc-kopftext { min-width: 0; }
+.ln-doc .kopf h1 { font-size: 15pt; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 2mm; line-height: 1.2; color: #1d1d1f; }
+.ln-doc .kopf .meta { color: #6e6e73; font-size: 9pt; }
+.ln-doc .ln-doc-logos { display: flex; gap: 4mm; align-items: center; justify-content: flex-end; flex-wrap: wrap; flex: none;
+  max-width: 50%; padding-bottom: 1mm; }
+.ln-doc .ln-doc-logos img { max-height: 11mm; max-width: 46mm; object-fit: contain; display: block; }
+.ln-doc table.liste { width: 100%; border-collapse: collapse; margin: 0; table-layout: fixed; font-size: 9pt; }
+.ln-doc table.liste thead { display: table-header-group; }
+.ln-doc table.liste th { text-align: left; font-size: 7.5pt; font-weight: 600; color: #8e8e93; text-transform: uppercase;
+  letter-spacing: .03em; border-bottom: 1px solid rgba(0,0,0,.12); padding: 2mm 2.5mm; white-space: nowrap;
+  vertical-align: bottom; background: none; position: static; box-shadow: none; }
+.ln-doc table.liste th.ln-doc-gruppe { text-align: center; border-bottom: 1px solid rgba(0,0,0,.08); padding-bottom: 1mm; }
+.ln-doc table.liste th.ln-doc-abschnitt { white-space: normal; overflow-wrap: normal; padding-top: 1mm; text-transform: none; letter-spacing: 0; }
+.ln-doc table.liste td { padding: 2mm 2.5mm; border-bottom: 1px solid rgba(0,0,0,.08); vertical-align: top; color: #1d1d1f;
+  overflow-wrap: anywhere; }
+.ln-doc table.liste tr { break-inside: avoid; page-break-inside: avoid; }
+.ln-doc table.liste .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow-wrap: normal; }
+.ln-doc table.liste td.ln-doc-gesamtspalte { font-weight: 600; }
+.ln-doc .ln-doc-kw { font-weight: 600; }
+.ln-doc .ln-doc-tage { font-variant-numeric: tabular-nums; }
+.ln-doc .ln-doc-bea { color: #1d1d1f; }
+.ln-doc .ln-doc-txt { white-space: normal; }
+.ln-doc .ln-doc-leer { color: #8e8e93; text-align: center; padding: 6mm 2.5mm; }
 .ln-doc .ln-doc-rechts { text-align: right; }
-.ln-doc .ln-doc-fuss tr.ln-doc-abstand td { border: 0; padding: 0; height: 18px; }
-.ln-doc .ln-doc-fuss tr.ln-doc-gesamt td { border: 0; font-weight: 700; }
-.ln-doc .ln-doc-bemerkung { margin-top: 18px; break-inside: avoid; page-break-inside: avoid; }
-.ln-doc .ln-doc-bemerkung p { white-space: pre-wrap; margin-top: 3px; }
-.ln-doc .ln-doc-freigabe { margin-top: 56px; text-align: right; font-weight: 700; white-space: pre; break-inside: avoid; page-break-inside: avoid; }
-@media (max-width: 700px) {
-  .ln-doc { font-size: 11px; }
-  .ln-doc .ln-doc-kopf { font-size: 12.5px; }
-  .ln-doc .ln-doc-logos img { max-height: 30px; max-width: 120px; }
-}
-@media print {
-  .ln-doc { font-size: 9pt; }
-  .ln-doc .ln-doc-tab th.ln-doc-abschnitt { font-size: 8pt; }
-  .ln-doc .ln-doc-eng { font-size: 8pt; }
-  .ln-doc .ln-doc-eng th.ln-doc-abschnitt { font-size: 7.5pt; }
-  .ln-doc .ln-doc-kopf { font-size: 10.5pt; }
-  .ln-doc .ln-doc-nr { font-size: 8.5pt; }
+.ln-doc table.liste tr.ln-doc-summe td { font-weight: 600; border-top: 1px solid #c7c7cc; border-bottom: 0; padding-top: 2.5mm; }
+.ln-doc table.liste.ln-doc-eng { font-size: 8pt; }
+.ln-doc table.liste.ln-doc-eng th, .ln-doc table.liste.ln-doc-eng td { padding-left: 1.5mm; padding-right: 1.5mm; }
+.ln-doc table.liste.ln-doc-eng th.num, .ln-doc table.liste.ln-doc-eng td.num { padding-left: 1mm; padding-right: 1mm; }
+.ln-doc table.liste.ln-doc-eng th.ln-doc-abschnitt { font-size: 7pt; }
+.ln-doc .ln-doc-gesamt { display: flex; justify-content: flex-end; align-items: baseline; gap: 6mm; margin-top: 4mm;
+  padding: 2.5mm 2.5mm; background: #f2f2f7; border-radius: 1.5mm; break-inside: avoid; page-break-inside: avoid; }
+.ln-doc .ln-doc-gesamt span { font-size: 8pt; font-weight: 600; color: #6e6e73; text-transform: uppercase; letter-spacing: .03em; }
+.ln-doc .ln-doc-gesamt strong { font-size: 11pt; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ln-doc .ln-doc-bemerkung { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; }
+.ln-doc .ln-doc-bemerkung h2 { font-size: 7.5pt; font-weight: 600; color: #8e8e93; text-transform: uppercase; letter-spacing: .03em;
+  margin: 0 0 1.5mm; }
+.ln-doc .ln-doc-bemerkung p { white-space: pre-wrap; }
+.ln-doc .ln-doc-freigabe { margin: 14mm 0 0 auto; width: 62%; break-inside: avoid; page-break-inside: avoid; }
+.ln-doc .ln-doc-freigabe-titel { font-weight: 600; margin-bottom: 11mm; }
+.ln-doc .ln-doc-unterschrift { display: grid; grid-template-columns: 2fr 3fr; gap: 8mm; }
+.ln-doc .ln-doc-linie { border-bottom: 1px solid #1d1d1f; margin-bottom: 1.2mm; }
+.ln-doc .ln-doc-unterschrift span { font-size: 8pt; color: #8e8e93; }
+.ln-doc .fuss { margin-top: 8mm; color: #8e8e93; font-size: 8pt; }
+@media screen and (max-width: 700px) {
+  .ln-doc .kopf { flex-direction: column-reverse; align-items: flex-start; }
+  .ln-doc .ln-doc-logos { max-width: 100%; justify-content: flex-start; }
+  .ln-doc .ln-doc-freigabe { width: 100%; }
 }
 `;
 
+/** Seitenränder und Papier: A4 hoch – ersetzt die Vorgabe A4 quer aus `druckeHtml`. */
+export const DRUCK_SEITE = `
+@page { size: A4 portrait; margin: 14mm 14mm 16mm; }
+body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }`;
+
 /** Öffnet den Druckdialog für den Nachweis (A4 hoch) – dort auch „Als PDF sichern“. */
 export function nachweisDrucken(daten: LeistungsnachweisDaten, n: Leistungsnachweis, projekt: Projekt): void {
-  druckeHtml(
-    esc(nachweisDateiname(n, projekt)),
-    nachweisHtml(daten, n, projekt),
-    `${DRUCK_STIL}
-    @page { size: A4 portrait; margin: 14mm; }
-    body { color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }`,
-  );
+  druckeHtml(esc(nachweisDateiname(n, projekt)), nachweisHtml(daten, n, projekt), `${DRUCK_STIL}${DRUCK_SEITE}`);
 }

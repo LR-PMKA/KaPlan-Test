@@ -1,0 +1,250 @@
+/*
+ * Gestaltung des Controllings: Filterleisten, Auswertungstabellen, Liste der
+ * Leistungsnachweise, Mitarbeiter, Abrechnung mit Eingabefeldern und das
+ * Blatt der Vorschau. Klassen mit dem Präfix „ln-co-“; Farben, Abstände und
+ * Radien nur aus den Design-Tokens in src/shared/global.css – so folgt auch
+ * der Farbmodus „kontrast“. Das Blatt der Vorschau selbst gestaltet
+ * DRUCK_STIL (domain/druck.ts) mit festen Farben wie auf Papier.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Filter                                                              */
+/* ------------------------------------------------------------------ */
+.ln-co-filter { display: flex; flex-direction: column; gap: 14px; }
+.ln-co-filter-zeitraum { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+.ln-co-blaettern, .ln-co-von-bis { gap: 6px; }
+.input.ln-co-monat { width: 170px; }
+.ln-co-von-bis .input { width: 160px; }
+.ln-co-zeitraum { display: inline-block; min-width: 92px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ln-co-filter-auswahl {
+  display: grid;
+  grid-template-columns: minmax(180px, 300px) minmax(180px, 280px) 1fr;
+  gap: 10px 14px;
+  align-items: end;
+}
+.ln-co-filter-auswahl.ln-co-filter-nachweise { grid-template-columns: auto minmax(180px, 300px) minmax(160px, 240px) 1fr; }
+.ln-co-filter-knoepfe { justify-content: flex-end; gap: 8px; }
+.ln-co-hinweise { border-top: 1px solid var(--separator); display: flex; flex-direction: column; gap: 4px; }
+.ln-co-warnung { color: var(--orange-text); font-weight: 600; }
+
+/* ------------------------------------------------------------------ */
+/* Tabellen                                                            */
+/* ------------------------------------------------------------------ */
+/* Breite Tabellen (viele Projekte oder Monate) scrollen quer – auch auf großen Bildschirmen */
+.ln-co-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ln-co-scroll .table th { position: static; }
+.table.ln-co-tabelle td.ln-co-wert { font-weight: 500; }
+.table.ln-co-tabelle td.ln-co-leer { color: var(--text-tertiary); font-weight: 400; }
+.table.ln-co-tabelle tr.ln-co-summe td { font-weight: 600; border-top: 1px solid var(--separator-strong); background: var(--bg-subtle); }
+.table.ln-co-tabelle tr.ln-co-nebensumme td { color: var(--text-secondary); background: var(--bg-subtle); }
+.ln-co-kopf-unten { display: block; font-size: 10.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-tertiary);
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+.ln-co-kuerzel { margin-left: 8px; font-size: 12px; }
+.ln-co-nummer { font-size: 12px; }
+/* Mitarbeiter × Spalten: die erste Spalte bleibt beim Querscrollen stehen */
+.table.ln-co-matrix th:first-child, .table.ln-co-matrix td:first-child {
+  position: sticky; left: 0; z-index: 2; background: var(--bg-elev); white-space: nowrap;
+  box-shadow: inset -1px 0 0 var(--separator);
+}
+.table.ln-co-matrix tr.ln-co-summe td:first-child { background: var(--bg-subtle); }
+.table.ln-co-matrix th.ln-stunden, .table.ln-co-matrix td.ln-stunden { min-width: 72px; padding-left: 10px; padding-right: 12px; }
+
+/* Liste der Leistungsnachweise */
+.ln-co-projektzelle { white-space: nowrap; }
+.ln-co-projektname { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.table td.ln-co-abgerechnet { font-weight: 700; }
+
+/* Mitarbeiter */
+.ln-co-rolle .checkbox { font-size: 12.5px; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ */
+/* Abrechnung                                                          */
+/* ------------------------------------------------------------------ */
+.ln-co-leiste { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+.ln-co-abrechnung-huelle .table.ln-co-abrechnung { min-width: 760px; }
+.table.ln-co-abrechnung td { vertical-align: top; border-bottom: none; }
+.table.ln-co-abrechnung tbody.ln-co-zeile { border-bottom: 1px solid var(--separator); }
+.table.ln-co-abrechnung tbody.ln-co-zeile-aufschlag td.ln-co-datum { box-shadow: inset 3px 0 0 var(--accent); }
+.table.ln-co-abrechnung tr.ln-co-weitere td { padding-top: 2px; }
+.table.ln-co-abrechnung tr.ln-co-erste td { padding-top: 12px; }
+.table.ln-co-abrechnung th.ln-co-spalte-datum { width: 124px; }
+.table.ln-co-abrechnung th.ln-co-spalte-bearbeiter { width: 150px; }
+.table.ln-co-abrechnung th.ln-co-spalte-abschnitt { width: 84px; }
+.table.ln-co-abrechnung th.ln-co-spalte-zahl { width: 84px; }
+.table.ln-co-abrechnung th.ln-co-spalte-eingabe { width: 118px; }
+.ln-co-datum { white-space: pre-line; font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ln-co-bearbeiter { font-size: 13px; }
+.ln-co-bearbeiter > span { display: block; }
+.ln-co-text { min-width: 0; }
+.ln-co-lesetext { white-space: pre-wrap; font-size: 13px; overflow-wrap: anywhere; }
+.ln-co-lesetext.ln-co-gekuerzt {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+.ln-co-text-knoepfe { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 4px; }
+.ln-co-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: none; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--accent);
+}
+.ln-co-link:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 2px; }
+.ln-co-leistungen {
+  list-style: none; margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--bg-subtle); border: 1px solid var(--separator); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;
+}
+.ln-co-leistung-kopf { display: block; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ln-co-leistung-text { white-space: pre-wrap; }
+.table.ln-co-abrechnung td.ln-co-abschnitt { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+.table.ln-co-abrechnung td.ln-co-erfasst { font-weight: 500; }
+/* Neben Eingabefeldern steht der Text auf deren Höhe */
+.table.ln-co-abrechnung.ln-co-eingaben td.ln-co-abschnitt, .table.ln-co-abrechnung.ln-co-eingaben td.ln-co-erfasst { padding-top: 9px; }
+.table.ln-co-abrechnung.ln-co-eingaben tr.ln-co-erste td.ln-co-abschnitt,
+.table.ln-co-abrechnung.ln-co-eingaben tr.ln-co-erste td.ln-co-erfasst { padding-top: 19px; }
+.table.ln-co-abrechnung td.ln-co-eingabe { font-weight: 400; }
+.table.ln-co-abrechnung tr.ln-co-zeilensumme td { font-weight: 600; border-top: 1px dashed var(--separator); padding-top: 6px; padding-bottom: 10px; }
+.table.ln-co-abrechnung tbody.ln-co-summenblock tr.ln-co-summe td { font-weight: 700; border-top: 1px solid var(--separator-strong); background: var(--bg-subtle); }
+.ln-co-aufschlag { color: var(--accent); font-weight: 600; }
+
+/* Eingabefelder für Stunden */
+.ln-co-feld { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; max-width: 100%; }
+.input.ln-co-zahl { width: 96px; max-width: 100%; text-align: right; font-variant-numeric: tabular-nums; padding: 5px 9px; }
+.ln-co-feld-abgerechnet .input.ln-co-zahl { font-weight: 600; }
+.input.ln-co-zahl.ln-co-fehlerhaft { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+.ln-co-fehler { font-size: 11px; color: var(--rot-text); text-align: right; max-width: 160px; white-space: normal; line-height: 1.3; }
+.ln-co-wirkt { display: block; font-size: 11px; color: var(--text-tertiary); margin-top: 2px; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ */
+/* Vorschau: das Blatt in A4-Breite                                     */
+/* ------------------------------------------------------------------ */
+.ln-co-blatt-huelle { overflow-x: auto; padding: 4px 2px 12px; }
+.ln-co-blatt {
+  background: #fff;
+  max-width: 820px;
+  min-width: 600px;
+  margin: 0 auto;
+  padding: 44px 52px 40px;
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mittlere und schmale Breiten                                        */
+/* ------------------------------------------------------------------ */
+@media (max-width: 1100px) {
+  .ln-co-filter-auswahl, .ln-co-filter-auswahl.ln-co-filter-nachweise { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ln-co-filter-knoepfe { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (max-width: 700px) {
+  .ln-co-blatt { padding: 24px 18px; }
+}
+
+@media (max-width: 1180px) {
+  /* Liste und Mitarbeiter neben der Seitenleiste: engere Zellen, Projektname kürzer –
+     Raster, Projekte und Letzte Leistung entfallen dort (.ln-spalte-weit) */
+  .table.ln-co-nachweise th, .table.ln-co-nachweise td { padding-left: 8px; padding-right: 8px; }
+  .table.ln-co-personen th, .table.ln-co-personen td { padding-left: 10px; padding-right: 10px; }
+  .ln-co-projektname { max-width: 120px; }
+}
+
+/* Abrechnung bis 1100 px: je Zeile ein Block – Datum, Bearbeiter, Text, darunter
+   Erfasst | Aufschlag | Abgerechnet. Die Tabelle braucht 760 px; neben der Seitenleiste
+   wären sonst Aufschlag und Abgerechnet nur durch Querscrollen erreichbar. */
+@media (max-width: 1100px) {
+  .table-scroll.ln-co-abrechnung-huelle { overflow-x: visible; }
+  .table-scroll.ln-co-abrechnung-huelle .table.ln-co-abrechnung { min-width: 0; }
+  .table.ln-co-abrechnung, .table.ln-co-abrechnung tbody { display: block; width: 100%; }
+  .table.ln-co-abrechnung thead { display: none; }
+  .table.ln-co-abrechnung tbody.ln-co-zeile { padding: 12px 14px; }
+  .table.ln-co-abrechnung tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; align-items: end; }
+  .table.ln-co-abrechnung.ln-co-mit-abschnitten tr { grid-template-columns: minmax(48px, auto) repeat(3, minmax(0, 1fr)); }
+  .table.ln-co-abrechnung td,
+  .table.ln-co-abrechnung tr.ln-co-erste td,
+  .table.ln-co-abrechnung tr.ln-co-weitere td { display: block; padding: 0; border: none; }
+  .table.ln-co-abrechnung td.ln-co-datum, .table.ln-co-abrechnung td.ln-co-bearbeiter, .table.ln-co-abrechnung td.ln-co-text { grid-column: 1 / -1; }
+  .table.ln-co-abrechnung td.ln-co-datum { white-space: normal; }
+  .table.ln-co-abrechnung tbody.ln-co-zeile-aufschlag td.ln-co-datum { box-shadow: none; }
+  .table.ln-co-abrechnung tbody.ln-co-zeile-aufschlag { box-shadow: inset 3px 0 0 var(--accent); }
+  .ln-co-bearbeiter { color: var(--text-secondary); }
+  .ln-co-bearbeiter > span { display: inline; }
+  .ln-co-bearbeiter > span + span::before { content: ', '; }
+  .table.ln-co-abrechnung td.ln-co-text { margin-bottom: 6px; }
+  .table.ln-co-abrechnung td.ln-stunden { text-align: left; }
+  .table.ln-co-abrechnung td.ln-stunden::after { content: none; }
+  .table.ln-co-abrechnung tr.ln-co-erste td[data-label]::before,
+  .table.ln-co-abrechnung tr.ln-co-summe td[data-label]::before {
+    content: attr(data-label); display: block; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-tertiary); margin-bottom: 2px;
+  }
+  /* Text neben den Eingabefeldern auf deren Höhe */
+  .table.ln-co-abrechnung tr.ln-co-erste td.ln-co-abschnitt, .table.ln-co-abrechnung tr.ln-co-weitere td.ln-co-abschnitt,
+  .table.ln-co-abrechnung tr.ln-co-erste td.ln-co-erfasst, .table.ln-co-abrechnung tr.ln-co-weitere td.ln-co-erfasst { padding: 0 0 7px; }
+  .table.ln-co-abrechnung td.ln-co-datum, .table.ln-co-abrechnung td.ln-co-bearbeiter, .table.ln-co-abrechnung td.ln-co-text { align-self: start; }
+  .table.ln-co-abrechnung tr.ln-co-zeilensumme { padding-top: 4px; margin-top: 4px; border-top: 1px dashed var(--separator); }
+  .table.ln-co-abrechnung tr.ln-co-zeilensumme td { border-top: none; padding: 0; }
+  .table.ln-co-abrechnung tbody.ln-co-summenblock tr.ln-co-summe { padding: 10px 14px; background: var(--bg-subtle); }
+  .table.ln-co-abrechnung tbody.ln-co-summenblock tr.ln-co-summe td { background: none; border: none; padding: 0; }
+  .table.ln-co-abrechnung tbody.ln-co-summenblock tr.ln-co-summe td:first-child { grid-column: 1 / -1; }
+  /* Mit Abschnitten steht vorn die Spalte des Abschnitts – die Summen rücken unter Erfasst, Aufschlag, Abgerechnet */
+  .table.ln-co-abrechnung.ln-co-mit-abschnitten tbody.ln-co-summenblock tr.ln-co-summe td:nth-child(2) { grid-column-start: 2; }
+  .ln-co-feld { align-items: stretch; width: 100%; }
+  .input.ln-co-zahl { width: 100%; }
+  .ln-co-fehler { text-align: left; }
+  .ln-co-abschnitt { overflow: hidden; text-overflow: ellipsis; }
+}
+@media (min-width: 641px) and (max-width: 1100px) {
+  .table.ln-co-abrechnung tbody.ln-co-zeile { padding: 14px 18px; }
+  .table.ln-co-abrechnung tbody.ln-co-summenblock tr.ln-co-summe { padding: 12px 18px; }
+  .ln-co-feld { max-width: 200px; }
+}
+
+@media (max-width: 640px) {
+  .ln-co-filter-auswahl, .ln-co-filter-auswahl.ln-co-filter-nachweise { grid-template-columns: minmax(0, 1fr); }
+  .ln-co-filter-zeitraum { align-items: stretch; flex-direction: column; }
+  .ln-co-blaettern { justify-content: space-between; }
+  .input.ln-co-monat { flex: 1 1 auto; width: auto; min-width: 0; }
+  .ln-co-von-bis .input { flex: 1 1 120px; width: auto; }
+  .ln-co-leiste > .row { width: 100%; }
+  .ln-co-leiste > .row > .btn { flex: 1 1 auto; }
+
+  /* Liste der Leistungsnachweise: Projekt und Titel, darunter die drei Zahlen nebeneinander */
+  .table-stack.ln-co-nachweise tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; }
+  .table-stack.ln-co-nachweise td { width: auto; padding: 1px 0; }
+  .table-stack.ln-co-nachweise td:nth-child(-n+4) { grid-column: 1 / -1; }
+  .table-stack.ln-co-nachweise td.ln-stunden { text-align: left; }
+  .table-stack.ln-co-nachweise td.ln-stunden::after { content: none; }
+  .table-stack.ln-co-nachweise td[data-label]::before {
+    content: attr(data-label); display: block; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-tertiary);
+  }
+  .table-stack.ln-co-nachweise tr.ln-co-summe td:empty { display: none; }
+  .ln-co-projektzelle { display: flex !important; gap: 8px; align-items: baseline; }
+
+  /* Stunden je Projekt: das Projekt, darunter die vier Zahlen nebeneinander */
+  .table-stack.ln-co-projekte tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 10px; }
+  .table-stack.ln-co-projekte td { width: auto; padding: 1px 0; }
+  .table-stack.ln-co-projekte td:first-child { grid-column: 1 / -1; }
+  .table-stack.ln-co-projekte td.ln-stunden { text-align: left; }
+  .table-stack.ln-co-projekte td.ln-stunden::after { content: none; }
+  .table-stack.ln-co-projekte td[data-label]::before {
+    content: attr(data-label); display: block; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-tertiary);
+  }
+
+  /* Mitarbeiter: Kürzel, Name, Status und Löschen oben, darunter Rolle und Stunden */
+  .table-stack.ln-co-personen tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .table-stack.ln-co-personen td { width: auto; padding: 1px 0; }
+  .table-stack.ln-co-personen td:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+  .table-stack.ln-co-personen td.ln-co-rolle { order: 2; flex-basis: 100%; }
+  .table-stack.ln-co-personen td.ln-stunden { order: 3; }
+  .table-stack.ln-co-personen td.actions { order: 4; margin-left: auto; padding-top: 0; flex: none; }
+  .table-stack.ln-co-personen td.ln-stunden::before { content: attr(data-label) ' '; font-weight: 400; color: var(--text-tertiary); }
+
+  /* Kontrolle je Mitarbeiter: so schmal wie möglich, mit vielen Abschnitten quer verschiebbar */
+  .table-scroll.ln-co-scroll > .table.ln-co-kontrolle { min-width: 0; }
+  .table.ln-co-kontrolle th, .table.ln-co-kontrolle td { padding-left: 8px; padding-right: 8px; }
+}
+
+/* Kontrastmodus: Markierung von Zeilen mit Aufschlag kräftiger */
+:root[data-farbmodus='kontrast'] .table.ln-co-abrechnung tbody.ln-co-zeile-aufschlag td.ln-co-datum { box-shadow: inset 4px 0 0 var(--accent); }
+:root[data-farbmodus='kontrast'] .input.ln-co-zahl.ln-co-fehlerhaft { border-width: 2px; }

@@ -1,14 +1,16 @@
 /**
  * Projektarbeitsbereich mit drei Seiten: Leistungsnachweise, Leistungen und
  * Einstellungen (Nachweis-Vorgaben, Abschnitte, Logos). Darüber
- * Projektnummer, Status, Raster und Leistungsbereich sowie „Bearbeiten“ und
- * „Löschen“.
+ * Projektnummer, Status, Raster und Leistungsbereich sowie „Bearbeiten“ (jede
+ * angemeldete Person) und „Löschen“ (nur mit der Rolle Controlling).
  */
 import { useState } from 'react';
 import { Icon } from '../../../shared/icons';
 import { useToast } from '../../../shared/toast';
 import { Badge, ConfirmDialog } from '../../../shared/ui';
+import { useMitAnmeldung } from '../components/AnmeldeDialog';
 import { RasterBadge, STATUS_TON, anzahl } from '../components/common';
+import { darf } from '../domain/rechte';
 import { PROJEKT_STATUS_LABEL, ZEITRAUMREGEL_LABEL, projektKurzname, type Projekt } from '../domain/types';
 import type { ProjektTab, Route } from '../lib/router';
 import { useStore } from '../store/store';
@@ -34,6 +36,8 @@ export function ProjektDetail({
 }) {
   const { data, deleteProjekt } = useStore();
   const toast = useToast();
+  const mitAnmeldung = useMitAnmeldung();
+  const loeschenErlaubt = darf(data, 'projektLoeschen');
   const [bearbeiten, setBearbeiten] = useState(false);
   const [loeschen, setLoeschen] = useState(false);
 
@@ -61,12 +65,14 @@ export function ProjektDetail({
           ) : null}
         </div>
         <div className="row">
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => setBearbeiten(true)}>
+          <button type="button" className="btn btn-sm btn-outline" onClick={() => mitAnmeldung(() => setBearbeiten(true))}>
             <Icon name="bearbeiten" size={12} /> Bearbeiten
           </button>
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => setLoeschen(true)}>
-            <Icon name="loeschen" size={12} /> Löschen
-          </button>
+          {loeschenErlaubt ? (
+            <button type="button" className="btn btn-sm btn-danger" onClick={() => setLoeschen(true)}>
+              <Icon name="loeschen" size={12} /> Löschen
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -90,7 +96,7 @@ export function ProjektDetail({
 
       {bearbeiten ? <ProjektDialog projekt={projekt} onClose={() => setBearbeiten(false)} /> : null}
 
-      {loeschen ? (
+      {loeschen && loeschenErlaubt ? (
         <ConfirmDialog
           titel="Projekt löschen?"
           text={`„${projekt.name}“ wird mit ${anzahl(umfang.nachweise, 'Leistungsnachweis', 'Leistungsnachweisen')} und ${anzahl(

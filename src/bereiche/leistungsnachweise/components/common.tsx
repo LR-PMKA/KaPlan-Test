@@ -1,4 +1,5 @@
 /** Fachliche Anzeige-Bausteine und Texte, die in mehreren Ansichten gebraucht werden. */
+import { formatDate, toISO } from '../../../shared/dates';
 import { Badge } from '../../../shared/ui';
 import {
   NACHWEIS_STATUS_LABEL,
@@ -56,7 +57,7 @@ export function nachNamen(a: Mitarbeiter, b: Mitarbeiter): number {
   return a.nachname.localeCompare(b.nachname, 'de') || a.vorname.localeCompare(b.vorname, 'de');
 }
 
-/** Eintrag einer Mitarbeiterauswahl: „LR: Lukas Roese“, bei Ausgeschiedenen mit Zusatz. */
+/** Eintrag einer Mitarbeiterauswahl: „MM: Max Mustermann“, bei Ausgeschiedenen mit Zusatz. */
 export function mitarbeiterAuswahlText(m: Mitarbeiter): string {
   return `${m.kuerzel ? `${m.kuerzel}: ` : ''}${mitarbeiterName(m) || m.kuerzel}${m.aktiv ? '' : ' (ausgeschieden)'}`;
 }
@@ -65,4 +66,12 @@ export function mitarbeiterAuswahlText(m: Mitarbeiter): string {
 export function nachweiseAngelegtText({ neu, erweitert }: { neu: number; erweitert: number }): string {
   if (neu === 0) return `${anzahl(erweitert, 'Leistungsnachweis', 'Leistungsnachweise')} erweitert.`;
   return `${anzahl(neu, 'Leistungsnachweis', 'Leistungsnachweise')} angelegt${erweitert ? `, ${erweitert} erweitert` : ''}.`;
+}
+
+/** Zeitpunkt in Ortszeit: „am 23.10.2026 um 14:05 Uhr“; leer ohne gültige Angabe. */
+export function zeitpunkt(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `am ${formatDate(toISO(d))} um ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`;
 }
