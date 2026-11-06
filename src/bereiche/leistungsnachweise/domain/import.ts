@@ -8,16 +8,28 @@
  * daraus eine Vorschau samt Plan (rein, ohne Zufall – alle Kennungen über
  * `neueId`), `importAnwenden` übernimmt den Plan in den Bestand.
  *
+ * Jeder übernimmt nur seine eigenen Zeilen (`ImportOptionen.angemeldetId`);
+ * Zeilen anderer Mitarbeiter werden mit dem Grund „anderer Mitarbeiter“
+ * übersprungen. Nur das Controlling übernimmt einen Sammel-Export aller
+ * Mitarbeiter der Datei (`alleMitarbeiter`) und legt dabei unbekannte an.
+ * Steht in der Datei Kürzel und Name („MM: Mustermann, Max“), müssen beide
+ * passen – ein gleiches Kürzel mit anderem Namen ist eine andere Person.
+ *
+ * Spalte J (Projektelement) gibt den Abschnitt an: Fehlende Abschnitte legt der
+ * Import selbst an und ordnet jede neue Leistung ihrem Abschnitt zu.
+ *
  * Leistungen anderer Mitarbeiter werden nie verändert: Doppelte Zeilen
- * (gleiche Person, gleiches Projekt, Datum, Stunden, Projektelement und Text)
- * werden übersprungen, und „ersetzen“ entfernt nur frühere Importe derselben
- * Person in den Projekten der Datei und in ihrem Datumsbereich der Datei.
+ * (gleiche Person, gleiches Projekt, Datum, Stunden, Text und – gegenüber
+ * früheren Importen – Projektelement) werden übersprungen, und „ersetzen“
+ * entfernt nur frühere Importe derselben Person in den Projekten der Datei
+ * und in ihrem Datumsbereich der Datei.
  */
 import { datumLesen, spaltenZuordnen } from '../../../shared/xlsxLesen';
 import { nachweiseErgaenzen, nachweisFuer, nachweisTitel, textSchluessel } from './nachweis';
 import {
   kuerzelAus,
   mitarbeiterName,
+  type Abschnitt,
   type ID,
   type ISODate,
   type Leistung,
@@ -33,7 +45,7 @@ import { istDatum, runden } from './zeitraum';
 /* ------------------------------------------------------------------ */
 
 export interface ImportPosten {
-  /** Zeile in der Datei (1-basiert wie in Excel; ganz leere Zeilen lässt das Lesen der Datei aus). */
+  /** Zeile in der Datei (1-basiert wie in Excel – auch nach leeren Zeilen, `GeleseneTabelle.zeilenNummern`). */
   zeile: number;
   datum: ISODate;
   text: string;
@@ -44,7 +56,7 @@ export interface ImportPosten {
   projektName: string;
   /** Roh, „01: Neustadt Nord, Strecke 3436“. */
   projektelement: string;
-  /** Roh, „LR: Roese, Lukas“ oder ''. */
+  /** Roh, „MM: Mustermann, Max“ oder ''. */
   mitarbeiterText: string;
 }
 
@@ -85,8 +97,17 @@ export const IMPORT_STANDARDSPALTEN: Record<ImportFeld, number> = {
   projektelement: 9,
 };
 
-/** Meldung, wenn eine Datei gar nicht zum Import passt. */
-const FEHLENDE_SPALTEN = 'In der Datei fehlen die Spalten für Datum, Stunden und Projekt.';
+/**
+ * Meldung, wenn eine Datei gar nicht zum Import passt – weder eine Kopfzeile
+ * noch eine einzige Zeile mit Datum und Stunden (wörtlich).
+ */
+export const IMPORT_FALSCHE_DATEI =
+  'Die Datei sieht nicht wie ein Export der Zeiterfassung aus – erwartet werden Buchungsdatum (A), Buchungstext (E), Menge (F) und Projekt (I).';
+
+/** Meldung, wenn die Datei Leistungen enthält, aber keine der angemeldeten Person (wörtlich). */
+export function keineEigenenLeistungen(name: string): string {
+  return `Die Datei enthält keine Leistungen von ${name}. Übernommen werden nur eigene Leistungen.`;
+}
 
 /**
  * Zahl aus einer Zelle: „6.5“ (Excel), „6,5“ und „1.234,5“ (deutsch) sowie
@@ -140,8 +161,18 @@ export function projektAusText(text: string): { nummer: string; name: string } |
   return { nummer: nummerNormal(m[1]), name: m[2].trim() };
 }
 
-/** Mitarbeiterangabe mit dem Vermerk, ob das Kürzel in der Datei stand (dann zählt es beim Zuordnen zuerst). */
-function mitarbeiterLesen(text: string): { kuerzel: string; vorname: string; nachname: string; mitKuerzel: boolean } | null {
+/** Mitarbeiterangabe der Datei mit dem Vermerk, ob Kürzel bzw. Name darin standen. */
+interface MitarbeiterAngabe {
+  kuerzel: string;
+  vorname: string;
+  nachname: string;
+  /** Das Kürzel stand in der Datei („MM: …“ oder nur „MM“). */
+  mitKuerzel: boolean;
+  /** Ein Name stand in der Datei. */
+  mitName: boolean;
+}
+
+function mitarbeiterLesen(text: string): MitarbeiterAngabe | null {
   const t = text.trim().replace(/\s+/g, ' ');
   if (!t) return null;
   const mitDoppelpunkt = /^([\p{L}\d]{1,6})\s*:\s*(.*)$/u.exec(t);
@@ -158,15 +189,69 @@ function mitarbeiterLesen(text: string): { kuerzel: string; vorname: string; nac
     nachname = teile.pop() ?? '';
     vorname = teile.join(' ');
   }
-  // Nur ein Kürzel, etwa „LR“
+  // Nur ein Kürzel, etwa „MM“
   const nurKuerzel = !kuerzel && !vorname && /^[\p{Lu}\d]{1,4}$/u.test(nachname);
   if (nurKuerzel) kuerzel = nachname;
+  const mitName = !nurKuerzel && !!(vorname || nachname);
   if (!nachname) nachname = kuerzel;
   if (!kuerzel) kuerzel = kuerzelAus(`${vorname} ${nachname}`);
-  return { kuerzel, vorname, nachname, mitKuerzel: !!mitDoppelpunkt || nurKuerzel };
+  return { kuerzel, vorname, nachname, mitKuerzel: !!mitDoppelpunkt || nurKuerzel, mitName };
 }
 
-/** „LR: Roese, Lukas“ → { kuerzel: 'LR', vorname: 'Lukas', nachname: 'Roese' }; „Lukas Roese“ → Kürzel aus Initialen. */
+/**
+ * Teile eines Namens zum Vergleichen: klein, Umlaute und ß ausgeschrieben
+ * („ö“ ≙ „oe“), ohne Akzente und Satzzeichen, nach dem Alphabet – so passt
+ * „Mustermann, Max“ zu „Max Mustermann“.
+ */
+function namensSchluessel(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .sort()
+    .join(' ');
+}
+
+/**
+ * Passt der Name aus der Datei zum Mitarbeiter? Vor- und Nachname in beliebiger
+ * Reihenfolge (`namensSchluessel`); nennt die Datei nur einen Nachnamen, genügt dieser.
+ */
+export function namePasst(angabe: { vorname: string; nachname: string }, m: Pick<Mitarbeiter, 'vorname' | 'nachname'>): boolean {
+  const datei = namensSchluessel(`${angabe.vorname} ${angabe.nachname}`);
+  if (!datei) return false;
+  if (datei === namensSchluessel(`${m.vorname} ${m.nachname}`)) return true;
+  return !angabe.vorname.trim() && namensSchluessel(angabe.nachname) === namensSchluessel(m.nachname);
+}
+
+/**
+ * Mitarbeiter zu einer Angabe der Datei: Kürzel und Name → beide müssen passen,
+ * sonst zählt der Name allein (die Person führt in KaPlan ein anderes Kürzel);
+ * nur ein Kürzel → über das Kürzel; nur ein Name → über den Namen. `kuerzelVon`
+ * ist die Person, der das Kürzel gehört, wenn der Name nicht zu ihr passt.
+ */
+export function mitarbeiterZuordnen(
+  personen: Mitarbeiter[],
+  text: string,
+): { person: Mitarbeiter | null; kuerzelVon: Mitarbeiter | null } {
+  const angabe = mitarbeiterLesen(text);
+  if (!angabe) return { person: null, kuerzelVon: null };
+  const zumKuerzel = angabe.mitKuerzel
+    ? (personen.find((m) => kuerzelNormal(m.kuerzel) === kuerzelNormal(angabe.kuerzel)) ?? null)
+    : null;
+  if (!angabe.mitName) return { person: zumKuerzel, kuerzelVon: null };
+  if (zumKuerzel && namePasst(angabe, zumKuerzel)) return { person: zumKuerzel, kuerzelVon: null };
+  const gleicherName = personen.filter((m) => namePasst(angabe, m));
+  const person = gleicherName.find((m) => m.aktiv) ?? gleicherName[0] ?? null;
+  return { person, kuerzelVon: person ? null : zumKuerzel };
+}
+
+/** „MM: Mustermann, Max“ → { kuerzel: 'MM', vorname: 'Max', nachname: 'Mustermann' }; „Max Mustermann“ → Kürzel aus Initialen. */
 export function mitarbeiterAusText(text: string): { kuerzel: string; vorname: string; nachname: string } | null {
   const m = mitarbeiterLesen(text);
   return m ? { kuerzel: m.kuerzel, vorname: m.vorname, nachname: m.nachname } : null;
@@ -185,6 +270,29 @@ export function projektelementTeilen(text: string): { kennung: string; name: str
 
 /** Kennung zum Vergleichen (Abschnitte, Dubletten). */
 export const kennungNormal = (kennung: string) => kennung.trim().toLowerCase();
+
+/**
+ * Neue Abschnitte zu Kennungen aus Projektelementen – nach Kennung sortiert,
+ * Spaltenkopf „Abschn.<Zahl>“ (bei „01“ „Abschn.1“, eindeutig im Projekt),
+ * Bezeichnung aus dem Projektelement.
+ */
+export function abschnitteAnlegen(
+  vorhandene: Abschnitt[],
+  teile: { kennung: string; name: string }[],
+  neueId: (prefix: string) => ID,
+): Abschnitt[] {
+  const alle = [...vorhandene];
+  const neu: Abschnitt[] = [];
+  for (const teil of [...teile].sort((a, b) => a.kennung.localeCompare(b.kennung, 'de', { numeric: true }))) {
+    const vergeben = new Set(alle.map((a) => a.kurz.trim().toLowerCase()));
+    let kurz = `Abschn.${/^\d+$/.test(teil.kennung) ? Number(teil.kennung) : alle.length + 1}`;
+    for (let n = alle.length + 1; vergeben.has(kurz.toLowerCase()); n++) kurz = `Abschn.${n}`;
+    const abschnitt: Abschnitt = { id: neueId('ab'), kennung: teil.kennung, kurz, name: teil.name || teil.kennung };
+    alle.push(abschnitt);
+    neu.push(abschnitt);
+  }
+  return neu;
+}
 
 /**
  * Abschnitte aus den Projektelementen der Leistungen eines Projekts: Je neuer
@@ -207,13 +315,8 @@ export function abschnitteAusElementen(
     const k = kennungNormal(teil.kennung);
     if (k && !elemente.has(k) && !abschnitte.some((a) => kennungNormal(a.kennung) === k)) elemente.set(k, teil);
   }
-  const neu = [...elemente.values()].sort((a, b) => a.kennung.localeCompare(b.kennung, 'de', { numeric: true }));
-  for (const teil of neu) {
-    const vergeben = new Set(abschnitte.map((a) => a.kurz.trim().toLowerCase()));
-    let kurz = `Abschn.${/^\d+$/.test(teil.kennung) ? Number(teil.kennung) : abschnitte.length + 1}`;
-    for (let n = abschnitte.length + 1; vergeben.has(kurz.toLowerCase()); n++) kurz = `Abschn.${n}`;
-    abschnitte.push({ id: neueId('ab'), kennung: teil.kennung, kurz, name: teil.name || teil.kennung });
-  }
+  const neu = abschnitteAnlegen(abschnitte, [...elemente.values()], neueId);
+  abschnitte.push(...neu);
   const nachKennung = new Map(abschnitte.map((a) => [kennungNormal(a.kennung), a.id]));
   const gueltig = new Set(abschnitte.map((a) => a.id));
   let zugeordnet = false;
@@ -240,9 +343,12 @@ export function abschnitteAusElementen(
  * `spaltenZuordnen`; ohne erkannte Kopfzeile gelten die Standardspalten und Zeile 1 zählt mit, wenn
  * sie ein Datum hat. Gründe für übersprungene Zeilen (wörtlich so verwenden):
  *  „ohne Datum“, „ohne Projekt“, „ohne Stunden“, „Projektnummer nicht erkannt“.
- * Wirft Error („In der Datei fehlen die Spalten für Datum, Stunden und Projekt.“), wenn gar nichts passt.
+ * Wirft Error (`IMPORT_FALSCHE_DATEI`), wenn weder eine Kopfzeile noch eine einzige Zeile mit
+ * Datum und Stunden vorkommt. `zeilenNummern` (aus `tabelleLesen`) sind die Zeilen in Excel;
+ * ohne sie zählt die Stelle in `zeilen`.
  */
-export function importLesen(zeilen: string[][], blatt = ''): ImportGelesen {
+export function importLesen(zeilen: string[][], blatt = '', zeilenNummern?: number[]): ImportGelesen {
+  const nummer = (i: number) => zeilenNummern?.[i] ?? i + 1;
   const vollstaendig = (s: Partial<Record<ImportFeld, number>>) =>
     s.datum !== undefined && s.stunden !== undefined && s.projekt !== undefined;
   const kopfIndex = zeilen.slice(0, 15).findIndex((z) => vollstaendig(spaltenZuordnen(z, IMPORT_SPALTEN)));
@@ -254,7 +360,8 @@ export function importLesen(zeilen: string[][], blatt = ''): ImportGelesen {
   } else {
     spalten = IMPORT_STANDARDSPALTEN;
     const datumIn = (z: string[] | undefined) => !!z && istDatum(datumLesen(z[IMPORT_STANDARDSPALTEN.datum] ?? '') ?? '');
-    if (!zeilen.some(datumIn)) throw new Error(FEHLENDE_SPALTEN);
+    const mitStunden = (z: string[]) => datumIn(z) && zahlLesen(z[IMPORT_STANDARDSPALTEN.stunden] ?? '') !== null;
+    if (!zeilen.some(mitStunden)) throw new Error(IMPORT_FALSCHE_DATEI);
     start = datumIn(zeilen[0]) ? 0 : 1;
   }
 
@@ -270,7 +377,7 @@ export function importLesen(zeilen: string[][], blatt = ''): ImportGelesen {
     const text = wert('text');
     const ueberspringen = (grund: string) =>
       uebersprungen.push({
-        zeile: i + 1,
+        zeile: nummer(i),
         grund,
         text: (text || z.map((f) => (f ?? '').trim()).filter(Boolean).join(' · ')).slice(0, 160),
       });
@@ -296,7 +403,7 @@ export function importLesen(zeilen: string[][], blatt = ''): ImportGelesen {
       continue;
     }
     posten.push({
-      zeile: i + 1,
+      zeile: nummer(i),
       datum,
       text,
       stunden: runden(stunden),
@@ -315,24 +422,38 @@ export function unbekannteProjektnummern(daten: Pick<LeistungsnachweisDaten, 'pr
   return [...new Set(gelesen.posten.map((p) => p.projektNummer))].filter((n) => !bekannt.has(n)).sort();
 }
 
+
 /* ------------------------------------------------------------------ */
 /* Planen                                                              */
 /* ------------------------------------------------------------------ */
 
 export interface ImportOptionen {
-  /** Mitarbeiter für Zeilen ohne Angabe; null = solche Zeilen überspringen. */
+  /**
+   * Angemeldete Person. Im Normalfall übernimmt sie nur ihre eigenen Zeilen
+   * (Zeilen ohne Mitarbeiterangabe gehören ihr); ohne Anmeldung wird nichts
+   * übernommen.
+   */
+  angemeldetId: ID | null;
+  /**
+   * Sammel-Export: Leistungen aller Mitarbeiter der Datei übernehmen und
+   * unbekannte Mitarbeiter anlegen – nur mit der Rolle Controlling (der Dialog
+   * setzt es nur dann, der Store lässt ohne Rolle nur eigene Leistungen zu).
+   */
+  alleMitarbeiter: boolean;
+  /** Nur Sammel-Export: Mitarbeiter für Zeilen ohne Angabe; null = solche Zeilen überspringen. */
   ersatzMitarbeiterId: ID | null;
   /** Unbekannte Projektnummern, die angelegt werden (Nummer → true). Fehlt eine, werden ihre Zeilen übersprungen. */
   neueProjekte: Record<string, boolean>;
   /**
    * Frühere Importe ersetzen: Importierte Leistungen derselben Person in den Projekten der Datei,
    * deren Datum zwischen dem ersten und letzten Datum dieser Person in der Datei liegt, werden durch
-   * die Datei ersetzt. Händisch erfasste Leistungen und Leistungen anderer Personen bleiben immer.
+   * die Datei ersetzt. Händisch erfasste Leistungen und Leistungen anderer Personen bleiben immer;
+   * im Normalfall betrifft es nur die angemeldete Person.
    */
   ersetzen: boolean;
 }
 
-/** Ein Projekt der Datei in der Vorschau. */
+/** Ein Projekt der Datei in der Vorschau (im Normalfall nur mit den eigenen Zeilen). */
 export interface VorschauProjekt {
   nummer: string;
   name: string;
@@ -354,22 +475,37 @@ export interface VorschauProjekt {
   /** Neue bzw. entfallende Leistungen in abgeschlossenen Nachweisen (Stand bleibt bis „Wieder öffnen“). */
   inAbgeschlossenem: number;
   nachweise: { titel: string; art: 'neu' | 'erweitert' | 'vorhanden' }[];
+  /** Abschnitte, die der Import aus Spalte J anlegt („01 Neustadt Nord, Strecke 3436“ …). */
+  neueAbschnitte: Abschnitt[];
 }
 
 /** Ein Mitarbeiter der Datei in der Vorschau (je Schreibweise der Spalte „Mitarbeiter“). */
 export interface VorschauMitarbeiter {
+  /** Angabe aus der Datei, etwa „MM: Mustermann, Max“. */
   text: string;
+  /** Kürzel und Name der zugeordneten (bzw. neu angelegten) Person, sonst aus der Datei. */
   kuerzel: string;
   name: string;
-  /** null = wird angelegt. */
+  /** Vorhandener Mitarbeiter; null = wird angelegt bzw. (Normalfall) unbekannt. */
   mitarbeiterId: ID | null;
   anzahl: number;
+  /**
+   * 'eigene' – die angemeldete Person; 'anderer' – eine andere Person, ihre
+   * Zeilen werden übersprungen (Normalfall); im Sammel-Export 'vorhanden'
+   * bzw. 'neu' (wird angelegt, wenn sie neue Leistungen erhält).
+   */
+  art: 'eigene' | 'anderer' | 'vorhanden' | 'neu';
+  /** Hinweis bei einem Kürzel, das zu einer anderen Person gehört; sonst null. */
+  hinweis: string | null;
 }
 
 /** Was `importAnwenden` übernimmt – alle Kennungen schon vergeben. */
 export interface ImportPlan {
   neueMitarbeiter: Mitarbeiter[];
+  /** Neue Projekte samt ihren Abschnitten aus Spalte J. */
   neueProjekte: Projekt[];
+  /** Neue Abschnitte vorhandener Projekte (aus Spalte J). */
+  neueAbschnitte: { projektId: ID; abschnitte: Abschnitt[] }[];
   entfernen: ID[];
   neueLeistungen: Leistung[];
   neueNachweise: Leistungsnachweis[];
@@ -382,7 +518,14 @@ export interface ImportVorschau {
   mitarbeiter: VorschauMitarbeiter[];
   /** Zeilen ohne Mitarbeiterangabe. */
   ohneMitarbeiter: number;
-  /** Aus dem Lesen + „ohne Mitarbeiter“, „Projekt wird nicht angelegt“ – nach Zeile sortiert. */
+  /** Zeilen, die einem Mitarbeiter zugeordnet sind – im Normalfall der angemeldeten Person. */
+  zugeordnet: number;
+  /** Normalfall: Zeilen anderer Mitarbeiter (übersprungen, Grund „anderer Mitarbeiter“). */
+  fremde: number;
+  /**
+   * Aus dem Lesen + „anderer Mitarbeiter“, „nicht angemeldet“, „ohne Mitarbeiter“,
+   * „Projekt wird nicht angelegt“ – nach Zeile sortiert.
+   */
   uebersprungen: Uebersprungen[];
   plan: ImportPlan;
 }
@@ -394,24 +537,43 @@ export const IMPORT_PROJEKT_VORGABEN: Pick<Projekt, 'leistungsbereich' | 'raster
   zeitraumregel: 'monat',
 };
 
-const nameNormal = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const textNormal = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-/** Schlüssel einer Leistung für die Dubletten-Erkennung. */
-function dublettenSchluessel(l: Pick<Leistung, 'projektId' | 'mitarbeiterId' | 'datum' | 'stunden' | 'projektelement' | 'text'>): string {
-  return [l.projektId, l.mitarbeiterId, l.datum, runden(l.stunden), textSchluessel(l.projektelement), textSchluessel(l.text)].join('|');
+/**
+ * Schlüssel einer Leistung für die Dubletten-Erkennung: Projekt, Person,
+ * Datum, Stunden, Text – mit `mitElement` auch das Projektelement (gegen
+ * frühere Importe; händisch erfasste Leistungen haben keins).
+ */
+function dublettenSchluessel(
+  l: Pick<Leistung, 'projektId' | 'mitarbeiterId' | 'datum' | 'stunden' | 'projektelement' | 'text'>,
+  mitElement: boolean,
+): string {
+  return [
+    l.projektId,
+    l.mitarbeiterId,
+    l.datum,
+    runden(l.stunden),
+    mitElement ? textSchluessel(l.projektelement) : '',
+    textSchluessel(l.text),
+  ].join('|');
 }
 
 /**
- * Rein. Ordnet Mitarbeiter zu (Kürzel, sonst Vor- und Nachname, ohne Rücksicht auf Groß-/Klein-
- * schreibung; sonst neu), Projekte über die Nummer (ohne Leerzeichen, Großschreibung; sonst neu mit
- * name aus der Datei, Leistungsbereich „Projektsteuerung“, Raster „monat“, Regel „monat“, markiert),
- * Abschnitte über `kennung` des Projektelements. Doppelte (gleiches Projekt, Person, Datum, Stunden,
- * Projektelement und Text ohne Rücksicht auf Leerraum/Groß-/Kleinschreibung – gegen den Bestand,
- * je vorhandener Leistung höchstens einmal) werden übersprungen. Danach `nachweiseErgaenzen` je
- * Projekt für die neuen Leistungen. `neueId(prefix)` erzeugt alle IDs.
+ * Rein. Ordnet Mitarbeiter zu (`mitarbeiterZuordnen`: Kürzel und Name müssen beide passen; nur
+ * Kürzel → Kürzel; nur Name → Name). Im Normalfall (`alleMitarbeiter` false) bleiben nur die
+ * Zeilen der angemeldeten Person (und die ohne Mitarbeiterangabe), alle anderen werden mit
+ * „anderer Mitarbeiter“ übersprungen; es entstehen keine Mitarbeiter. Im Sammel-Export
+ * entstehen unbekannte Mitarbeiter neu – bei einem Kürzel, das einer anderen Person gehört, mit
+ * freiem Kürzel (`kuerzelFrei`, etwa „MM2“) und Hinweis.
  *
- * Ein Kürzel aus der Datei („LR: …“) wird zuerst gesucht; steht nur ein Name da, zählt nur der Name.
- * Neue Mitarbeiter und Projekte nimmt der Plan nur auf, wenn sie neue Leistungen erhalten.
+ * Projekte über die Nummer (ohne Leerzeichen, Großschreibung; sonst neu mit name aus der Datei,
+ * Leistungsbereich „Projektsteuerung“, Raster „monat“, Regel „monat“, markiert). Abschnitte über
+ * die Kennung des Projektelements (Spalte J); fehlende legt der Plan an. Doppelte werden
+ * übersprungen – je vorhandener Leistung höchstens einmal: zuerst gegen frühere Importe mit
+ * gleichem Projektelement, danach gegen händisch erfasste ohne Rücksicht auf das Projektelement
+ * (`dublettenSchluessel`). Danach `nachweiseErgaenzen` je Projekt für die neuen Leistungen.
+ * `neueId(prefix)` erzeugt alle IDs. Neue Mitarbeiter und Projekte nimmt der Plan nur auf, wenn
+ * sie neue Leistungen erhalten.
  */
 export function importPlanen(
   daten: LeistungsnachweisDaten,
@@ -421,71 +583,102 @@ export function importPlanen(
   neueId: (prefix: string) => ID,
 ): ImportVorschau {
   const uebersprungen: Uebersprungen[] = [...gelesen.uebersprungen];
+  const sammel = optionen.alleMitarbeiter;
+  const ich = optionen.angemeldetId && daten.mitarbeiter.some((m) => m.id === optionen.angemeldetId) ? optionen.angemeldetId : null;
+  const bekannteIds = new Set(daten.mitarbeiter.map((m) => m.id));
 
   /* Mitarbeiter */
   const personen: Mitarbeiter[] = [...daten.mitarbeiter];
-  const bekannteIds = new Set(daten.mitarbeiter.map((m) => m.id));
   const vorlaeufig: Mitarbeiter[] = [];
-  const nachText = new Map<string, { vorschau: VorschauMitarbeiter; id: ID }>();
+  const nachText = new Map<string, { vorschau: VorschauMitarbeiter; id: ID | null }>();
   const personZu = (text: string): ID | null => {
-    const schluessel = nameNormal(text);
+    const schluessel = textNormal(text);
     const bekannt = nachText.get(schluessel);
     if (bekannt) {
       bekannt.vorschau.anzahl++;
       return bekannt.id;
     }
-    const info = mitarbeiterLesen(text);
-    if (!info) return null;
-    const name = nameNormal(`${info.vorname} ${info.nachname}`);
-    const gefunden =
-      (info.mitKuerzel ? personen.find((m) => kuerzelNormal(m.kuerzel) === kuerzelNormal(info.kuerzel)) : undefined) ??
-      personen.find((m) => nameNormal(mitarbeiterName(m)) === name);
+    const angabe = mitarbeiterLesen(text)!;
+    const { person: gefunden, kuerzelVon } = mitarbeiterZuordnen(personen, text);
     let person = gefunden;
-    if (!person) {
+    let art: VorschauMitarbeiter['art'];
+    let hinweis: string | null = null;
+    const nameVon = (m: Mitarbeiter) => mitarbeiterName(m) || m.kuerzel;
+    if (!sammel) {
+      art = person && person.id === ich ? 'eigene' : 'anderer';
+      if (art === 'anderer' && kuerzelVon && kuerzelVon.id === ich) {
+        hinweis = `Gleiches Kürzel „${angabe.kuerzel}“ wie ${nameVon(kuerzelVon)}, aber ein anderer Name – eine andere Person.`;
+      }
+    } else if (person) {
+      art = bekannteIds.has(person.id) ? 'vorhanden' : 'neu';
+    } else {
+      const kuerzel = kuerzelFrei(angabe.kuerzel, personen);
       person = {
         id: neueId('ma'),
-        kuerzel: kuerzelFrei(info.kuerzel, personen),
-        vorname: info.vorname,
-        nachname: info.nachname,
+        kuerzel,
+        vorname: angabe.vorname,
+        nachname: angabe.nachname,
         aktiv: true,
+        controlling: false,
       };
       personen.push(person);
       vorlaeufig.push(person);
+      art = 'neu';
+      if (kuerzelVon) {
+        hinweis = `Das Kürzel „${angabe.kuerzel}“ gehört zu ${nameVon(kuerzelVon)} – angelegt wird eine neue Person mit dem Kürzel „${kuerzel}“.`;
+      }
     }
+    const id = sammel ? person!.id : art === 'eigene' ? ich : null;
     nachText.set(schluessel, {
-      id: person.id,
+      id,
       vorschau: {
         text: text.trim(),
-        kuerzel: person.kuerzel,
-        name: mitarbeiterName(person),
-        mitarbeiterId: bekannteIds.has(person.id) ? person.id : null,
+        kuerzel: person?.kuerzel ?? angabe.kuerzel,
+        name: person ? mitarbeiterName(person) : mitarbeiterName(angabe),
+        mitarbeiterId: person && bekannteIds.has(person.id) ? person.id : null,
         anzahl: 1,
+        art,
+        hinweis,
       },
     });
-    return person.id;
+    return id;
   };
   const ersatz =
-    optionen.ersatzMitarbeiterId && bekannteIds.has(optionen.ersatzMitarbeiterId) ? optionen.ersatzMitarbeiterId : null;
+    sammel && optionen.ersatzMitarbeiterId && bekannteIds.has(optionen.ersatzMitarbeiterId) ? optionen.ersatzMitarbeiterId : null;
+
+  // Zeilen in der Reihenfolge der Datei, damit Mitarbeiter in dieser Reihenfolge erscheinen
+  let ohneMitarbeiter = 0;
+  let fremde = 0;
+  const zugeordnet: { posten: ImportPosten; mitarbeiterId: ID }[] = [];
+  for (const p of gelesen.posten) {
+    const angabe = p.mitarbeiterText.trim();
+    if (!angabe) ohneMitarbeiter++;
+    const mitarbeiterId = angabe ? personZu(p.mitarbeiterText) : sammel ? ersatz : ich;
+    if (!sammel && !ich) {
+      uebersprungen.push({ zeile: p.zeile, grund: 'nicht angemeldet', text: p.text });
+      continue;
+    }
+    if (!sammel && angabe && !mitarbeiterId) {
+      fremde++;
+      uebersprungen.push({ zeile: p.zeile, grund: 'anderer Mitarbeiter', text: `${angabe} – ${p.text}`.slice(0, 160) });
+      continue;
+    }
+    if (!mitarbeiterId) {
+      uebersprungen.push({ zeile: p.zeile, grund: 'ohne Mitarbeiter', text: p.text });
+      continue;
+    }
+    zugeordnet.push({ posten: p, mitarbeiterId });
+  }
 
   /* Projekte */
   const gruppen = new Map<string, ImportPosten[]>();
-  for (const p of gelesen.posten) {
+  for (const { posten: p } of zugeordnet) {
     const liste = gruppen.get(p.projektNummer);
     if (liste) liste.push(p);
     else gruppen.set(p.projektNummer, [p]);
   }
-
-  interface Kandidat {
-    posten: ImportPosten;
-    projekt: Projekt;
-    mitarbeiterId: ID;
-    abschnittId: ID | null;
-  }
-  const kandidaten: Kandidat[] = [];
   const neueProjekte: Projekt[] = [];
   const projektInfo: { nummer: string; posten: ImportPosten[]; projekt: Projekt | null; vorhanden: boolean; anlegen: boolean }[] = [];
-  let ohneMitarbeiter = 0;
-
   for (const nummer of [...gruppen.keys()].sort()) {
     const posten = gruppen.get(nummer)!;
     const vorhanden = daten.projekte.find((p) => nummerNormal(p.nummer) === nummer);
@@ -509,53 +702,63 @@ export function importPlanen(
     projektInfo.push({ nummer, posten, projekt, vorhanden: !!vorhanden, anlegen });
   }
 
-  // Zeilen in der Reihenfolge der Datei, damit Mitarbeiter in dieser Reihenfolge erscheinen
+  interface Kandidat {
+    posten: ImportPosten;
+    projekt: Projekt;
+    mitarbeiterId: ID;
+  }
   const projektVon = new Map(projektInfo.map((i) => [i.nummer, i.projekt]));
-  for (const p of gelesen.posten) {
-    if (!p.mitarbeiterText.trim()) ohneMitarbeiter++;
-    const mitarbeiterId = p.mitarbeiterText.trim() ? personZu(p.mitarbeiterText) : ersatz;
+  const kandidaten: Kandidat[] = [];
+  for (const { posten: p, mitarbeiterId } of zugeordnet) {
     const projekt = projektVon.get(p.projektNummer) ?? null;
     if (!projekt) {
       uebersprungen.push({ zeile: p.zeile, grund: 'Projekt wird nicht angelegt', text: p.text });
       continue;
     }
-    if (!mitarbeiterId) {
-      uebersprungen.push({ zeile: p.zeile, grund: 'ohne Mitarbeiter', text: p.text });
-      continue;
-    }
-    const kennung = kennungNormal(projektelementTeilen(p.projektelement).kennung);
-    const abschnitt = kennung ? projekt.abschnitte.find((a) => kennungNormal(a.kennung) === kennung) : undefined;
-    kandidaten.push({ posten: p, projekt, mitarbeiterId, abschnittId: abschnitt?.id ?? null });
+    kandidaten.push({ posten: p, projekt, mitarbeiterId });
   }
 
   /* Dubletten gegen den Bestand – als Multimenge, frühere Importe zuerst */
-  const bestand = new Map<string, Leistung[]>();
-  for (const l of [...daten.leistungen].sort((a, b) => (a.quelle === b.quelle ? 0 : a.quelle === 'import' ? -1 : 1))) {
-    const k = dublettenSchluessel(l);
-    const liste = bestand.get(k);
+  const mitElement = new Map<string, Leistung[]>();
+  const haendisch = new Map<string, Leistung[]>();
+  const einreihen = (ziel: Map<string, Leistung[]>, k: string, l: Leistung) => {
+    const liste = ziel.get(k);
     if (liste) liste.push(l);
-    else bestand.set(k, [l]);
+    else ziel.set(k, [l]);
+  };
+  for (const l of [...daten.leistungen].sort((a, b) => (a.quelle === b.quelle ? 0 : a.quelle === 'import' ? -1 : 1))) {
+    einreihen(mitElement, dublettenSchluessel(l, true), l);
+    if (l.quelle === 'manuell') einreihen(haendisch, dublettenSchluessel(l, false), l);
   }
   const verbraucht = new Set<ID>();
+  const nimm = (liste: Leistung[] | undefined): Leistung | undefined => {
+    while (liste && liste.length > 0) {
+      const l = liste.shift()!;
+      if (!verbraucht.has(l.id)) return l;
+    }
+    return undefined;
+  };
+  const alsLeistung = (k: Kandidat) => ({
+    projektId: k.projekt.id,
+    mitarbeiterId: k.mitarbeiterId,
+    datum: k.posten.datum,
+    stunden: k.posten.stunden,
+    projektelement: k.posten.projektelement,
+    text: k.posten.text,
+  });
   const doppelt = new Map<ID, number>();
-  const neu: Kandidat[] = [];
-  for (const k of kandidaten) {
-    const passend = bestand.get(
-      dublettenSchluessel({
-        projektId: k.projekt.id,
-        mitarbeiterId: k.mitarbeiterId,
-        datum: k.posten.datum,
-        stunden: k.posten.stunden,
-        projektelement: k.posten.projektelement,
-        text: k.posten.text,
-      }),
-    );
-    const treffer = passend?.shift();
-    if (treffer) {
+  const offen = new Set<Kandidat>(kandidaten);
+  for (const stufe of [true, false]) {
+    for (const k of kandidaten) {
+      if (!offen.has(k)) continue;
+      const treffer = nimm((stufe ? mitElement : haendisch).get(dublettenSchluessel(alsLeistung(k), stufe)));
+      if (!treffer) continue;
       verbraucht.add(treffer.id);
+      offen.delete(k);
       doppelt.set(k.projekt.id, (doppelt.get(k.projekt.id) ?? 0) + 1);
-    } else neu.push(k);
+    }
   }
+  const neu = kandidaten.filter((k) => offen.has(k));
 
   /* Frühere Importe derselben Personen ersetzen */
   const entfernt: Leistung[] = [];
@@ -585,19 +788,42 @@ export function importPlanen(
     }
   }
 
+  /* Abschnitte aus Spalte J für die neuen Leistungen */
+  const neueAbschnitteVon = new Map<ID, Abschnitt[]>();
+  const abschnittNachKennung = new Map<ID, Map<string, ID>>();
+  for (const info of projektInfo) {
+    const projekt = info.projekt;
+    if (!projekt) continue;
+    const bekannt = new Map(projekt.abschnitte.map((a) => [kennungNormal(a.kennung), a.id]));
+    const fehlend = new Map<string, { kennung: string; name: string }>();
+    for (const k of neu) {
+      if (k.projekt.id !== projekt.id || !k.posten.projektelement.trim()) continue;
+      const teil = projektelementTeilen(k.posten.projektelement);
+      const kennung = kennungNormal(teil.kennung);
+      if (kennung && !bekannt.has(kennung) && !fehlend.has(kennung)) fehlend.set(kennung, teil);
+    }
+    const angelegt = abschnitteAnlegen(projekt.abschnitte, [...fehlend.values()], neueId);
+    for (const a of angelegt) bekannt.set(kennungNormal(a.kennung), a.id);
+    if (angelegt.length) neueAbschnitteVon.set(projekt.id, angelegt);
+    abschnittNachKennung.set(projekt.id, bekannt);
+  }
+
   /* Neue Leistungen und Nachweise */
-  const neueLeistungen: Leistung[] = neu.map((k) => ({
-    id: neueId('le'),
-    projektId: k.projekt.id,
-    mitarbeiterId: k.mitarbeiterId,
-    datum: k.posten.datum,
-    text: k.posten.text,
-    stunden: k.posten.stunden,
-    abschnittId: k.abschnittId,
-    projektelement: k.posten.projektelement,
-    quelle: 'import',
-    erfasst: jetzt,
-  }));
+  const neueLeistungen: Leistung[] = neu.map((k) => {
+    const kennung = kennungNormal(projektelementTeilen(k.posten.projektelement).kennung);
+    return {
+      id: neueId('le'),
+      projektId: k.projekt.id,
+      mitarbeiterId: k.mitarbeiterId,
+      datum: k.posten.datum,
+      text: k.posten.text,
+      stunden: k.posten.stunden,
+      abschnittId: (kennung && abschnittNachKennung.get(k.projekt.id)?.get(kennung)) || null,
+      projektelement: k.posten.projektelement,
+      quelle: 'import',
+      erfasst: jetzt,
+    };
+  });
   const neueNachweise: Leistungsnachweis[] = [];
   const erweiterteNachweise: ImportPlan['erweiterteNachweise'] = [];
   const projekte: VorschauProjekt[] = [];
@@ -648,18 +874,27 @@ export function importPlanen(
       ersetzt: weg.length,
       inAbgeschlossenem,
       nachweise,
+      neueAbschnitte: projekt ? (neueAbschnitteVon.get(projekt.id) ?? []) : [],
     });
   }
 
   const genutzt = new Set(neueLeistungen.flatMap((l) => [l.mitarbeiterId, l.projektId]));
+  const neuesProjekt = new Set(neueProjekte.map((p) => p.id));
   return {
     projekte,
     mitarbeiter: [...nachText.values()].map((m) => m.vorschau),
     ohneMitarbeiter,
+    zugeordnet: zugeordnet.length,
+    fremde,
     uebersprungen: uebersprungen.sort((a, b) => a.zeile - b.zeile),
     plan: {
-      neueMitarbeiter: vorlaeufig.filter((m) => genutzt.has(m.id)),
-      neueProjekte: neueProjekte.filter((p) => genutzt.has(p.id)),
+      neueMitarbeiter: sammel ? vorlaeufig.filter((m) => genutzt.has(m.id)) : [],
+      neueProjekte: neueProjekte
+        .filter((p) => genutzt.has(p.id))
+        .map((p) => ({ ...p, abschnitte: [...p.abschnitte, ...(neueAbschnitteVon.get(p.id) ?? [])] })),
+      neueAbschnitte: [...neueAbschnitteVon.entries()]
+        .filter(([projektId]) => !neuesProjekt.has(projektId))
+        .map(([projektId, abschnitte]) => ({ projektId, abschnitte })),
       entfernen: entfernt.map((l) => l.id),
       neueLeistungen,
       neueNachweise,
@@ -672,7 +907,7 @@ export function importPlanen(
 /* Anwenden                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Rein: wendet den Plan an (Mitarbeiter, Projekte, Entfernen, Leistungen, Nachweise neu/erweitert). */
+/** Rein: wendet den Plan an (Mitarbeiter, Projekte, Abschnitte, Entfernen, Leistungen, Nachweise neu/erweitert). */
 export function importAnwenden(daten: LeistungsnachweisDaten, plan: ImportPlan): LeistungsnachweisDaten {
   const ids = (liste: { id: ID }[]) => new Set(liste.map((x) => x.id));
   const mitarbeiterIds = ids(daten.mitarbeiter);
@@ -681,10 +916,17 @@ export function importAnwenden(daten: LeistungsnachweisDaten, plan: ImportPlan):
   const nachweisIds = ids(daten.nachweise);
   const entfernen = new Set(plan.entfernen);
   const erweitert = new Map(plan.erweiterteNachweise.map((e) => [e.id, e]));
+  const abschnitte = new Map((plan.neueAbschnitte ?? []).map((e) => [e.projektId, e.abschnitte]));
   return {
     ...daten,
     mitarbeiter: [...daten.mitarbeiter, ...plan.neueMitarbeiter.filter((m) => !mitarbeiterIds.has(m.id))],
-    projekte: [...daten.projekte, ...plan.neueProjekte.filter((p) => !projektIds.has(p.id))],
+    projekte: [
+      ...daten.projekte.map((p) => {
+        const neu = abschnitte.get(p.id)?.filter((a) => !p.abschnitte.some((x) => x.id === a.id));
+        return neu && neu.length ? { ...p, abschnitte: [...p.abschnitte, ...neu] } : p;
+      }),
+      ...plan.neueProjekte.filter((p) => !projektIds.has(p.id)),
+    ],
     leistungen: [
       ...daten.leistungen.filter((l) => !entfernen.has(l.id)),
       ...plan.neueLeistungen.filter((l) => !leistungIds.has(l.id)),
@@ -692,7 +934,7 @@ export function importAnwenden(daten: LeistungsnachweisDaten, plan: ImportPlan):
     nachweise: [
       ...daten.nachweise.map((n) => {
         const e = erweitert.get(n.id);
-        return e ? { ...n, von: e.von, bis: e.bis } : n;
+        return e && n.status === 'entwurf' ? { ...n, von: e.von, bis: e.bis } : n;
       }),
       ...plan.neueNachweise.filter((n) => !nachweisIds.has(n.id)),
     ],

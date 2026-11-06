@@ -8,14 +8,23 @@
  *
  * Nachweise eines Projekts überschneiden sich nie (`ueberschneidung`). Fehlt
  * für Leistungen ein Nachweis, legt `nachweiseErgaenzen` ihn nach der
- * Zeitraumregel des Projekts an oder verlängert den offenen.
+ * Zeitraumregel des Projekts an oder verlängert den offenen. Beim Abschluss
+ * eines fortlaufenden Nachweises endet sein Zeitraum am letzten Tag mit
+ * Leistungen (`nachweisAbschliessenAnwenden`); abgeschlossene Nachweise
+ * wachsen nie.
+ *
+ * Aufschläge des Controllings (`aufschlaege`, ± Stunden je Zeile und
+ * Abschnitt) ändern die erfassten Stunden nicht; jede Zeile weist erfasst,
+ * Aufschlag und abgerechnet aus (`abrechnen`).
  *
  * Alle Funktionen sind rein; Kennungen liefert der Aufrufer.
  */
-import { addDays } from '../../../shared/dates';
+import { addDays, toISO } from '../../../shared/dates';
 import {
   OHNE_ABSCHNITT,
+  aufschlagSchluessel,
   mitarbeiterName,
+  type Abschnitt,
   type ID,
   type ISODate,
   type Leistung,
@@ -24,6 +33,7 @@ import {
   type NachweisStand,
   type NachweisZeile,
   type Projekt,
+  type Raster,
 } from './types';
 import {
   datumText,
@@ -84,11 +94,20 @@ export function textSchluessel(text: string): string {
   return text.toLowerCase().replace(/\s+/g, '');
 }
 
-/** Teile eines Leistungstexts: an „,“ und „;“ zerlegt, ohne leere Teile; Zeilenumbrüche bleiben. */
+/** Platzhalter für ein Dezimalkomma beim Zerlegen. */
+const DEZIMALKOMMA = '\u0000';
+
+/**
+ * Teile eines Leistungstexts: an „,“ und „;“ zerlegt, ohne leere Teile;
+ * Zeilenumbrüche bleiben. Ein Komma zwischen zwei Ziffern trennt nicht – es
+ * ist ein Dezimalkomma („km 12,5“, „45,300 bis 45,800“).
+ */
 export function textTeile(text: string): string[] {
+  // Dezimalkommas vorübergehend verdecken (ohne Lookbehind, damit auch ältere Browser den Code laden)
   return text
+    .replace(/(\d),(?=\d)/g, `$1${DEZIMALKOMMA}`)
     .split(/[,;]/)
-    .map((t) => t.trim())
+    .map((t) => t.split(DEZIMALKOMMA).join(',').trim())
     .filter(Boolean);
 }
 
@@ -109,8 +128,9 @@ function teileVon(leistungen: Leistung[]): string[] {
 
 /**
  * Automatischer Leistungstext einer Zeile: die Texte der Leistungen in zeitlicher Reihenfolge,
- * an „,“ und „;“ in Teile zerlegt, Dubletten (ohne Rücksicht auf Groß-/Kleinschreibung und
- * Leerraum) entfernt, mit „, “ verbunden. Zeilenumbrüche im Text bleiben erhalten.
+ * an „,“ und „;“ in Teile zerlegt (nicht an Dezimalkommas, `textTeile`), Dubletten (ohne
+ * Rücksicht auf Groß-/Kleinschreibung und Leerraum) entfernt, mit „, “ verbunden.
+ * Zeilenumbrüche im Text bleiben erhalten.
  */
 export function automatikText(leistungen: Leistung[]): string {
   return teileVon(leistungen).join(', ');
@@ -144,15 +164,191 @@ const addieren = (ziel: Record<string, number>, schluessel: string, stunden: num
 const gerundet = (werte: Record<string, number>) =>
   Object.fromEntries(Object.entries(werte).map(([k, v]) => [k, runden(v)]));
 
+/* ------------------------------------------------------------------ */
+/* Aufschläge                                                          */
+/* ------------------------------------------------------------------ */
+
+/** Ab so vielen Abschnitten weist ein Nachweis die Stunden je Abschnitt in eigenen Spalten aus (wie die Vorlage Woche.xlsx). */
+export const ABSCHNITTSSPALTEN_AB = 2;
+
+/**
+ * Zeigt ein Nachweis die Stunden je Abschnitt in eigenen Spalten? Erst ab zwei
+ * Abschnitten; mit einem oder keinem steht nur eine Stundenspalte da (wie die
+ * Vorlage Monat.xlsx). Danach richten sich auch die Aufschläge: mit Spalten je
+ * Abschnitt (und „ohne“), sonst einer je Zeile (`abschnittId` null).
+ */
+export function mitAbschnittsspalten(abschnitte: Pick<Abschnitt, 'id'>[]): boolean {
+  return abschnitte.length >= ABSCHNITTSSPALTEN_AB;
+}
+
+/** Meldung bei einer Aufschlags-Eingabe, die keine Zahl ist (wörtlich). */
+export const AUFSCHLAG_KEINE_ZAHL = 'Bitte eine Zahl angeben, z. B. 1,5 oder -0,5.';
+/** Meldung, wenn ein Aufschlag die abgerechneten Stunden unter 0 drückte (wörtlich). */
+export const AUFSCHLAG_UNTER_NULL = 'Abgerechnet kann nicht unter 0 Std. liegen.';
+
+/**
+ * Aufschläge einer Zeile, die wirken: Schlüssel ist der Abschnitt
+ * (`OHNE_ABSCHNITT` für „ohne“ bzw. die ganze Zeile). Mit Abschnittsspalten
+ * zählen die Abschnitte des Projekts und „ohne“, sonst nur „ohne“; alle
+ * anderen bleiben stehen, wirken aber nicht.
+ */
+function aufschlaegeDerZeile(
+  aufschlaege: Record<string, number>,
+  zeilenSchluessel: string,
+  abschnittIds: Set<ID>,
+  spalten: boolean,
+): Record<string, number> {
+  const praefix = `${zeilenSchluessel}|`;
+  const ergebnis: Record<string, number> = {};
+  for (const [k, wert] of Object.entries(aufschlaege)) {
+    if (!k.startsWith(praefix) || !Number.isFinite(wert) || wert === 0) continue;
+    const abschnitt = k.slice(praefix.length);
+    if (abschnitt === OHNE_ABSCHNITT || (spalten && abschnittIds.has(abschnitt))) ergebnis[abschnitt] = wert;
+  }
+  return ergebnis;
+}
+
+/** Ergebnis von `abrechnen`. */
+interface Abrechnung {
+  aufschlag: number;
+  aufschlagJeAbschnitt: Record<string, number>;
+  abgerechnet: number;
+  abgerechnetJeAbschnitt: Record<string, number>;
+  /** Summe nach den Aufschlägen der Abschnitte, vor dem der ganzen Zeile („ohne“). */
+  vorZeile: number;
+}
+
+/**
+ * Abgerechnete Stunden einer Zeile aus den erfassten je Abschnitt und den
+ * Aufschlägen: Ein Aufschlag auf einen Abschnitt wirkt in dessen Spalte (nie
+ * unter 0). Der Aufschlag „ohne“ gilt der ganzen Zeile: Mehr Stunden kommen
+ * in die Spalte „ohne“, weniger mindern zuerst „ohne“, dann die übrigen
+ * Abschnitte der Reihe nach – so ist `abgerechnet` stets die Summe der
+ * Spalten und nie unter 0.
+ */
+function abrechnen(stundenJeAbschnitt: Record<string, number>, eingaben: Record<string, number>): Abrechnung {
+  const werte: Record<string, number> = { ...stundenJeAbschnitt };
+  for (const [k, v] of Object.entries(eingaben)) {
+    if (k === OHNE_ABSCHNITT) continue;
+    werte[k] = Math.max(0, runden((werte[k] ?? 0) + v));
+  }
+  const vorZeile = runden(Object.values(werte).reduce((s, v) => s + v, 0));
+  const zeile = eingaben[OHNE_ABSCHNITT] ?? 0;
+  if (zeile > 0) werte[OHNE_ABSCHNITT] = runden((werte[OHNE_ABSCHNITT] ?? 0) + zeile);
+  else if (zeile < 0) {
+    let rest = -zeile;
+    const reihenfolge = [OHNE_ABSCHNITT, ...Object.keys(werte).filter((k) => k !== OHNE_ABSCHNITT)];
+    for (const k of reihenfolge) {
+      if (rest <= 0) break;
+      const vorhanden = werte[k] ?? 0;
+      if (vorhanden <= 0) continue;
+      const weg = Math.min(vorhanden, rest);
+      werte[k] = runden(vorhanden - weg);
+      rest = runden(rest - weg);
+    }
+  }
+  const abgerechnetJeAbschnitt: Record<string, number> = {};
+  const aufschlagJeAbschnitt: Record<string, number> = {};
+  for (const [k, v] of Object.entries(werte)) {
+    const erfasst = stundenJeAbschnitt[k];
+    if (erfasst !== undefined || v !== 0) abgerechnetJeAbschnitt[k] = runden(v);
+    const differenz = runden(v - (erfasst ?? 0));
+    if (differenz !== 0) aufschlagJeAbschnitt[k] = differenz;
+  }
+  const abgerechnet = runden(Object.values(abgerechnetJeAbschnitt).reduce((s, v) => s + v, 0));
+  const erfasst = runden(Object.values(stundenJeAbschnitt).reduce((s, v) => s + v, 0));
+  return { aufschlag: runden(abgerechnet - erfasst), aufschlagJeAbschnitt, abgerechnet, abgerechnetJeAbschnitt, vorZeile };
+}
+
+/** Eingegebener Aufschlag einer Zeile und eines Abschnitts (null = ganze Zeile bzw. „ohne“) – für das Eingabefeld. */
+export function aufschlagEingabe(n: Pick<Leistungsnachweis, 'aufschlaege'>, zeilenSchluessel: string, abschnittId: ID | null): number {
+  return n.aufschlaege[aufschlagSchluessel(zeilenSchluessel, abschnittId)] ?? 0;
+}
+
+/**
+ * Aufschlag, der zu einer Eingabe „abgerechnet“ führt: mit Abschnittsspalten
+ * die Differenz zu den erfassten Stunden der Spalte (Abschnitt bzw. „ohne“ für
+ * null), sonst zu denen der ganzen Zeile. `spalten` = `mitAbschnittsspalten`.
+ */
+export function aufschlagFuerAbgerechnet(
+  zeile: Pick<NachweisZeile, 'stunden' | 'stundenJeAbschnitt'>,
+  abschnittId: ID | null,
+  abgerechnet: number,
+  spalten: boolean,
+): number {
+  const erfasst = spalten ? (zeile.stundenJeAbschnitt[abschnittId ?? OHNE_ABSCHNITT] ?? 0) : zeile.stunden;
+  return runden(abgerechnet - erfasst);
+}
+
+/**
+ * Aufschläge eines Nachweises mit einem geänderten Wert – rein; so arbeitet
+ * `aufschlagSetzen` im Store. Gerundet auf zwei Nachkommastellen; null oder 0
+ * entfernt den Aufschlag. Ohne Abschnittsspalten gilt jeder Aufschlag der
+ * ganzen Zeile (`abschnittId` wird zu null).
+ */
+export function mitAufschlag(
+  n: Leistungsnachweis,
+  projekt: Pick<Projekt, 'abschnitte'> | undefined,
+  zeilenSchluessel: string,
+  abschnittId: ID | null,
+  stunden: number | null,
+): Leistungsnachweis {
+  const spalten = mitAbschnittsspalten(projekt?.abschnitte ?? []);
+  const schluessel = aufschlagSchluessel(zeilenSchluessel, spalten ? abschnittId : null);
+  const wert = stunden === null || !Number.isFinite(stunden) ? 0 : runden(stunden);
+  const aufschlaege = { ...n.aufschlaege };
+  if (wert === 0) delete aufschlaege[schluessel];
+  else aufschlaege[schluessel] = wert;
+  return { ...n, aufschlaege };
+}
+
+/**
+ * Prüft einen Aufschlag vor dem Setzen: eine Zahl, die Zeile hat Leistungen,
+ * der Abschnitt gehört zum Projekt und die abgerechneten Stunden fielen nicht
+ * unter 0 (je Abschnitt bzw. für die ganze Zeile). Entfernen (null/0) geht
+ * immer. Liefert die Meldung oder null.
+ */
+export function aufschlagPruefen(
+  daten: LeistungsnachweisDaten,
+  n: Leistungsnachweis,
+  zeilenSchluessel: string,
+  abschnittId: ID | null,
+  stunden: number | null,
+): string | null {
+  if (stunden !== null && !Number.isFinite(stunden)) return AUFSCHLAG_KEINE_ZAHL;
+  const wert = stunden === null ? 0 : runden(stunden);
+  if (wert === 0) return null;
+  const projekt = daten.projekte.find((p) => p.id === n.projektId);
+  const zeile = nachweisZeilen(daten, n).find((z) => z.schluessel === zeilenSchluessel);
+  if (!zeile) return 'Diese Zeile hat keine Leistungen.';
+  const abschnitte = projekt?.abschnitte ?? [];
+  const spalten = mitAbschnittsspalten(abschnitte);
+  if (spalten && abschnittId !== null && !abschnitte.some((a) => a.id === abschnittId)) return 'Diesen Abschnitt gibt es nicht (mehr).';
+  const neu = mitAufschlag(n, projekt, zeilenSchluessel, abschnittId, stunden);
+  const eingaben = aufschlaegeDerZeile(neu.aufschlaege, zeilenSchluessel, new Set(abschnitte.map((a) => a.id)), spalten);
+  const r = abrechnen(zeile.stundenJeAbschnitt, eingaben);
+  if (spalten && abschnittId !== null) {
+    if (runden((zeile.stundenJeAbschnitt[abschnittId] ?? 0) + wert) < 0) return AUFSCHLAG_UNTER_NULL;
+  } else if (runden(r.vorZeile + wert) < 0) return AUFSCHLAG_UNTER_NULL;
+  return null;
+}
+
+/** Anzahl wirksamer Aufschläge (Einträge ≠ 0) eines Nachweises. */
+export function anzahlAufschlaege(n: Pick<Leistungsnachweis, 'aufschlaege'>): number {
+  return Object.values(n.aufschlaege).filter((v) => v !== 0).length;
+}
+
 /**
  * Zeilen des Nachweises aus den Leistungen (live – auch bei abgeschlossenen; für die Anzeige
  * abgeschlossener Nachweise `zeilenFuerAnzeige` verwenden). Nur Perioden mit Leistungen.
  * Bearbeiter: Namen in der Reihenfolge der ersten Leistung, unbekannte Mitarbeiter als „?“.
- * Text: `texte[schluessel].text`, sonst `automatikText`.
+ * Text: `texte[schluessel].text`, sonst `automatikText`. Dazu Aufschlag und abgerechnete
+ * Stunden aus `aufschlaege` (`abrechnen`).
  */
 export function nachweisZeilen(daten: LeistungsnachweisDaten, n: Leistungsnachweis): NachweisZeile[] {
   const projekt = daten.projekte.find((p) => p.id === n.projektId);
   const abschnittIds = new Set((projekt?.abschnitte ?? []).map((a) => a.id));
+  const spalten = mitAbschnittsspalten(projekt?.abschnitte ?? []);
   const mitarbeiter = new Map(daten.mitarbeiter.map((m) => [m.id, m]));
   const gruppen = new Map<string, { von: ISODate; bis: ISODate; leistungen: Leistung[] }>();
   for (const l of leistungenIm(daten, n.projektId, n.von, n.bis)) {
@@ -177,6 +373,8 @@ export function nachweisZeilen(daten: LeistungsnachweisDaten, n: Leistungsnachwe
         addieren(stundenJeMitarbeiter, l.mitarbeiterId, l.stunden);
       }
       const bearbeitet = n.texte[schluessel];
+      const jeAbschnitt = gerundet(stundenJeAbschnitt);
+      const abrechnung = abrechnen(jeAbschnitt, aufschlaegeDerZeile(n.aufschlaege ?? {}, schluessel, abschnittIds, spalten));
       return {
         schluessel,
         von,
@@ -186,9 +384,13 @@ export function nachweisZeilen(daten: LeistungsnachweisDaten, n: Leistungsnachwe
         text: bearbeitet ? bearbeitet.text : automatikText(leistungen),
         textBearbeitet: !!bearbeitet,
         stunden: runden(stunden),
-        stundenJeAbschnitt: gerundet(stundenJeAbschnitt),
+        stundenJeAbschnitt: jeAbschnitt,
         stundenJeMitarbeiter: gerundet(stundenJeMitarbeiter),
         leistungIds: leistungen.map((l) => l.id),
+        aufschlag: abrechnung.aufschlag,
+        aufschlagJeAbschnitt: abrechnung.aufschlagJeAbschnitt,
+        abgerechnet: abrechnung.abgerechnet,
+        abgerechnetJeAbschnitt: abrechnung.abgerechnetJeAbschnitt,
       };
     });
 }
@@ -228,6 +430,22 @@ export function summeStunden(zeilen: NachweisZeile[]): number {
   return runden(zeilen.reduce((s, z) => s + z.stunden, 0));
 }
 
+/** Summe der abgerechneten Stunden. */
+export function summeAbgerechnet(zeilen: Pick<NachweisZeile, 'abgerechnet'>[]): number {
+  return runden(zeilen.reduce((s, z) => s + z.abgerechnet, 0));
+}
+
+/** Erfasst, Aufschlag und abgerechnet über Zeilen (abgerechnet = erfasst + Aufschlag). */
+export function nachweisSummen(zeilen: Pick<NachweisZeile, 'stunden' | 'aufschlag' | 'abgerechnet'>[]): {
+  erfasst: number;
+  aufschlag: number;
+  abgerechnet: number;
+} {
+  const erfasst = runden(zeilen.reduce((s, z) => s + z.stunden, 0));
+  const abgerechnet = runden(zeilen.reduce((s, z) => s + z.abgerechnet, 0));
+  return { erfasst, aufschlag: runden(abgerechnet - erfasst), abgerechnet };
+}
+
 /** Summe der Stunden einer Auswahl von Leistungen. */
 export function stundenVon(leistungen: Pick<Leistung, 'stunden'>[]): number {
   return runden(leistungen.reduce((s, l) => s + l.stunden, 0));
@@ -243,7 +461,7 @@ export function bearbeiterVon(zeilen: NachweisZeile[]): string[] {
   return [...new Set(zeilen.flatMap((z) => z.bearbeiter))];
 }
 
-/** Stand zum Festschreiben beim Abschließen. */
+/** Stand zum Festschreiben beim Abschließen – mit den Aufschlägen und abgerechneten Stunden. */
 export function standErzeugen(daten: LeistungsnachweisDaten, n: Leistungsnachweis): NachweisStand {
   const projekt = daten.projekte.find((p) => p.id === n.projektId);
   const zeilen = nachweisZeilen(daten, n);
@@ -258,6 +476,7 @@ export function standErzeugen(daten: LeistungsnachweisDaten, n: Leistungsnachwei
     },
     titel: nachweisTitel(n),
     stunden: summeStunden(zeilen),
+    abgerechnet: summeAbgerechnet(zeilen),
   };
 }
 
@@ -273,7 +492,7 @@ const gleicheIds = (a: ID[], b: ID[]) => {
   return b.every((id) => menge.has(id));
 };
 
-/** Weicht der Live-Stand eines abgeschlossenen Nachweises vom festgeschriebenen ab? (Stunden, Leistungen oder Texte) */
+/** Weicht der Live-Stand eines abgeschlossenen Nachweises vom festgeschriebenen ab? (Stunden, Leistungen, Texte oder abgerechnete Stunden) */
 export function standVeraltet(daten: LeistungsnachweisDaten, n: Leistungsnachweis): boolean {
   if (n.status !== 'abgeschlossen' || !n.stand) return false;
   const alt = n.stand.zeilen;
@@ -285,11 +504,62 @@ export function standVeraltet(daten: LeistungsnachweisDaten, n: Leistungsnachwei
       a.schluessel !== z.schluessel ||
       a.text !== z.text ||
       runden(a.stunden) !== z.stunden ||
+      runden(a.abgerechnet) !== z.abgerechnet ||
       !gleicheIds(a.leistungIds, z.leistungIds) ||
       !gleicheWerte(a.stundenJeAbschnitt, z.stundenJeAbschnitt) ||
       !gleicheWerte(a.stundenJeMitarbeiter, z.stundenJeMitarbeiter)
     );
   });
+}
+
+/**
+ * Für die Rückfrage vor „Wieder öffnen“: Zahlen des festgeschriebenen Stands
+ * und der aktuellen Leistungen, und ob sie voneinander abweichen.
+ */
+export function standVergleich(
+  daten: LeistungsnachweisDaten,
+  n: Leistungsnachweis,
+): { veraltet: boolean; stand: { erfasst: number; abgerechnet: number }; aktuell: { erfasst: number; abgerechnet: number } } {
+  const live = nachweisSummen(nachweisZeilen(daten, n));
+  const stand = n.stand ? { erfasst: n.stand.stunden, abgerechnet: n.stand.abgerechnet } : { erfasst: live.erfasst, abgerechnet: live.abgerechnet };
+  return { veraltet: standVeraltet(daten, n), stand, aktuell: { erfasst: live.erfasst, abgerechnet: live.abgerechnet } };
+}
+
+/* ------------------------------------------------------------------ */
+/* Rasterwechsel                                                       */
+/* ------------------------------------------------------------------ */
+
+const RASTER_PRAEFIX: Record<Raster, string> = { tag: 'T', woche: 'W', monat: 'M' };
+
+/**
+ * Was ein Wechsel des Rasters verdeckt: von Hand bearbeitete Texte und
+ * Aufschläge, die zu Zeilen des bisherigen Rasters gehören. Sie bleiben
+ * gespeichert und kehren zurück, wenn das Raster wieder umgestellt wird.
+ */
+export function rasterwechselVerdeckt(n: Pick<Leistungsnachweis, 'raster' | 'texte' | 'aufschlaege'>, raster: Raster): { texte: number; aufschlaege: number } {
+  if (raster === n.raster) return { texte: 0, aufschlaege: 0 };
+  const bisher = RASTER_PRAEFIX[n.raster];
+  return {
+    texte: Object.keys(n.texte).filter((k) => k.startsWith(bisher)).length,
+    aufschlaege: Object.entries(n.aufschlaege).filter(([k, v]) => k.startsWith(bisher) && v !== 0).length,
+  };
+}
+
+/**
+ * Warnung im Dialog „Zeitraum ändern“ bei einem Rasterwechsel, etwa
+ * „2 bearbeitete Texte und 1 Aufschlag gehören zu einem anderen Raster und
+ * werden nicht mehr angezeigt – sie kehren zurück, wenn das Raster wieder
+ * umgestellt wird.“; null, wenn nichts verdeckt wird.
+ */
+export function rasterwechselHinweis(verdeckt: { texte: number; aufschlaege: number }): string | null {
+  const teile: string[] = [];
+  if (verdeckt.texte > 0) teile.push(verdeckt.texte === 1 ? '1 bearbeiteter Text' : `${verdeckt.texte} bearbeitete Texte`);
+  if (verdeckt.aufschlaege > 0) teile.push(verdeckt.aufschlaege === 1 ? '1 Aufschlag' : `${verdeckt.aufschlaege} Aufschläge`);
+  if (teile.length === 0) return null;
+  const einer = verdeckt.texte + verdeckt.aufschlaege === 1;
+  return einer
+    ? `${teile[0]} gehört zu einem anderen Raster und wird nicht mehr angezeigt – er kehrt zurück, wenn das Raster wieder umgestellt wird.`
+    : `${teile.join(' und ')} gehören zu einem anderen Raster und werden nicht mehr angezeigt – sie kehren zurück, wenn das Raster wieder umgestellt wird.`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -307,6 +577,7 @@ export function neuerNachweis(id: ID, projekt: Projekt, von: ISODate, bis: ISODa
     raster: projekt.raster,
     status: 'entwurf',
     texte: {},
+    aufschlaege: {},
     bemerkung: '',
     erstellt: jetzt,
     geaendert: jetzt,
@@ -410,6 +681,67 @@ export function nachweiseSichern(
   if (!projekt || tage.length === 0) return { daten, ergaenzung: { neu: [], erweitert: [] } };
   const ergaenzung = nachweiseErgaenzen(daten, projekt, tage, jetzt, neueId);
   return { daten: ergaenzungAnwenden(daten, ergaenzung, jetzt), ergaenzung };
+}
+
+/* ------------------------------------------------------------------ */
+/* Abschließen                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Lokales Datum (JJJJ-MM-TT) eines Zeitpunkts (ISO). */
+export function tagVon(zeitpunkt: string): ISODate {
+  const d = new Date(zeitpunkt);
+  return Number.isNaN(d.getTime()) ? zeitpunkt.slice(0, 10) : toISO(d);
+}
+
+/**
+ * Ende eines Nachweises beim Abschluss: Bei der Regel „Fortlaufend bis zum
+ * Abschluss“ endet er am letzten Tag mit Leistungen in ihm, spätestens heute
+ * (ohne Leistungen heute) – nie später als bisher und nie vor seinem Beginn.
+ * Sonst bleibt `bis`. Dazu die Leistungen, die danach liegen und deshalb in
+ * einen neuen Nachweis kommen.
+ */
+export function abschlussZeitraum(
+  daten: LeistungsnachweisDaten,
+  n: Leistungsnachweis,
+  heute: ISODate,
+): { bis: ISODate; gekuerzt: boolean; spaetere: Leistung[] } {
+  const projekt = daten.projekte.find((p) => p.id === n.projektId);
+  if (projekt?.zeitraumregel !== 'fortlaufend' || n.status !== 'entwurf') return { bis: n.bis, gekuerzt: false, spaetere: [] };
+  const leistungen = leistungenIm(daten, n.projektId, n.von, n.bis);
+  const letzte = leistungen.length ? leistungen[leistungen.length - 1].datum : null;
+  const ende = letzte && letzte < heute ? letzte : heute;
+  if (ende < n.von || ende >= n.bis) return { bis: n.bis, gekuerzt: false, spaetere: [] };
+  return { bis: ende, gekuerzt: true, spaetere: leistungen.filter((l) => l.datum > ende) };
+}
+
+/**
+ * Schließt einen Nachweis ab – rein; so arbeitet `nachweisAbschliessen` im
+ * Store: Zeitraum nach `abschlussZeitraum`, Stand festschreiben (mit
+ * Aufschlägen), Status abgeschlossen. Leistungen nach einem gekürzten Ende
+ * erhalten gleich einen neuen Nachweis (`nachweiseSichern`, Kennungen über
+ * `neueId`). Ein abgeschlossener Nachweis bleibt unverändert.
+ */
+export function nachweisAbschliessenAnwenden(
+  daten: LeistungsnachweisDaten,
+  id: ID,
+  jetzt: string,
+  neueId: () => ID,
+): LeistungsnachweisDaten {
+  const n = daten.nachweise.find((x) => x.id === id);
+  if (!n || n.status !== 'entwurf') return daten;
+  const { bis, gekuerzt, spaetere } = abschlussZeitraum(daten, n, tagVon(jetzt));
+  const gekuerzterNachweis: Leistungsnachweis = gekuerzt ? { ...n, bis } : n;
+  const zwischen = gekuerzt ? { ...daten, nachweise: daten.nachweise.map((x) => (x.id === id ? gekuerzterNachweis : x)) } : daten;
+  const zu: Leistungsnachweis = {
+    ...gekuerzterNachweis,
+    status: 'abgeschlossen',
+    abgeschlossen: jetzt,
+    geaendert: jetzt,
+    stand: standErzeugen(zwischen, gekuerzterNachweis),
+  };
+  const ergebnis = { ...zwischen, nachweise: zwischen.nachweise.map((x) => (x.id === id ? zu : x)) };
+  if (spaetere.length === 0) return ergebnis;
+  return nachweiseSichern(ergebnis, n.projektId, spaetere.map((l) => l.datum), jetzt, neueId).daten;
 }
 
 /* ------------------------------------------------------------------ */

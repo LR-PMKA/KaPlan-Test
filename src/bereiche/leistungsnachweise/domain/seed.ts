@@ -3,12 +3,22 @@
  * sind frei erfunden (Personen, Projekte, Nummern im Format „K9xxx“); ihre
  * Leistungen liegen in den letzten zwei bis drei Monaten vor dem heutigen
  * Tag, die Nachweise entstehen wie im Betrieb über `nachweiseErgaenzen`.
+ * Angemeldet ist Anna Becker mit der Rolle Controlling, damit die Demo alles
+ * zeigt; über „Angemeldet als“ lässt sich auf eine andere Person umschalten.
  */
 import { addDays, istArbeitstag, today } from '../../../shared/dates';
-import { ergaenzungAnwenden, mitZeilenText, nachweiseErgaenzen, nachweiseVon, nachweisZeilen, standErzeugen } from './nachweis';
+import {
+  ergaenzungAnwenden,
+  mitAufschlag,
+  mitZeilenText,
+  nachweiseErgaenzen,
+  nachweiseVon,
+  nachweisZeilen,
+  standErzeugen,
+} from './nachweis';
 import {
   DATEN_VERSION,
-  STANDARD_BEARBEITER,
+  mitarbeiterName,
   newId,
   type ID,
   type Leistung,
@@ -37,12 +47,13 @@ export function logosVon(projekt: Pick<Projekt, 'logos'>): Logo[] {
 /* Demodaten                                                           */
 /* ------------------------------------------------------------------ */
 
-const person = (kuerzel: string, vorname: string, nachname: string): Mitarbeiter => ({
+const person = (kuerzel: string, vorname: string, nachname: string, controlling = false): Mitarbeiter => ({
   id: newId('ma'),
   kuerzel,
   vorname,
   nachname,
   aktiv: true,
+  controlling,
 });
 
 function projekt(werte: Omit<Projekt, 'id' | 'status' | 'markiert' | 'logos'>): Projekt {
@@ -89,14 +100,19 @@ function demoLeistungen(regeln: Regel[], von: string, bis: string): Leistung[] {
   return leistungen;
 }
 
-/** Demodatenbestand: vier Mitarbeiter, drei Projekte, Leistungen der letzten Monate, Nachweise. */
+/**
+ * Demodatenbestand: vier Mitarbeiter (Anna Becker mit der Rolle Controlling
+ * und angemeldet), drei Projekte, Leistungen der letzten Monate, Nachweise –
+ * der älteste der Brücke abgeschlossen mit einem Aufschlag von +1,5 Std., im
+ * offenen Nachweis der Dammsanierung ein Aufschlag von −0,5 Std.
+ */
 export function seedDaten(): LeistungsnachweisDaten {
   const heute = today();
   const jetzt = new Date().toISOString();
   const beginn = monatVersetzt(heute, -2);
   const ende = addDays(heute, -1);
 
-  const ab = person('AB', 'Anna', 'Becker');
+  const ab = person('AB', 'Anna', 'Becker', true);
   const jk = person('JK', 'Jonas', 'Keller');
   const mv = person('MV', 'Miriam', 'Vogt');
   const tb = person('TB', 'Tobias', 'Brandt');
@@ -203,7 +219,7 @@ export function seedDaten(): LeistungsnachweisDaten {
 
   let daten: LeistungsnachweisDaten = {
     version: DATEN_VERSION,
-    einstellungen: { bearbeiter: STANDARD_BEARBEITER, mitarbeiterId: null, farbmodus: 'standard' },
+    einstellungen: { bearbeiter: mitarbeiterName(ab), mitarbeiterId: ab.id, farbmodus: 'standard' },
     mitarbeiter: [ab, jk, mv, tb],
     projekte: [bruecke, damm, halt],
     leistungen,
@@ -227,8 +243,18 @@ export function seedDaten(): LeistungsnachweisDaten {
         )
       : erster;
     n = { ...n, bemerkung: 'Abrechnung nach Stundennachweis gemäß Vertrag.' };
+    // Aufschlag des Controllings: +1,5 Std. auf die Monatszeile
+    if (zeile) n = mitAufschlag(n, bruecke, zeile.schluessel, null, 1.5);
     const abgeschlossen = `${addDays(monatVersetzt(erster.bis, 1), 2)}T09:30:00.000Z`;
     n = { ...n, status: 'abgeschlossen', abgeschlossen, geaendert: abgeschlossen, stand: standErzeugen(daten, n) };
+    daten = { ...daten, nachweise: daten.nachweise.map((x) => (x.id === n.id ? n : x)) };
+  }
+
+  // Im offenen Nachweis der Dammsanierung −0,5 Std. auf den Abschnitt Nordheim einer Woche
+  const offen = nachweiseVon(daten, damm.id).find((x) => x.status === 'entwurf');
+  const woche = offen ? nachweisZeilen(daten, offen).find((z) => (z.stundenJeAbschnitt[nord.id] ?? 0) >= 1) : undefined;
+  if (offen && woche) {
+    const n = mitAufschlag(offen, damm, woche.schluessel, nord.id, -0.5);
     daten = { ...daten, nachweise: daten.nachweise.map((x) => (x.id === n.id ? n : x)) };
   }
   return daten;

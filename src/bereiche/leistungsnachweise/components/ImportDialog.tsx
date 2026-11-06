@@ -65,7 +65,7 @@ export function blattLesen(tabellen: GeleseneTabelle[]): ImportGelesen {
   let ersterFehler: unknown = null;
   for (const t of tabellen) {
     try {
-      const gelesen = importLesen(t.zeilen, t.name);
+      const gelesen = importLesen(t.zeilen, t.name, t.zeilenNummern);
       if (gelesen.posten.length > 0) return gelesen;
       erstes ??= gelesen;
     } catch (e) {
@@ -88,8 +88,11 @@ export function importVorgaben(
   bisher?: Pick<ImportOptionen, 'ersetzen'>,
 ): ImportOptionen {
   const ich = daten.einstellungen.mitarbeiterId;
+  const angemeldetId = ich && daten.mitarbeiter.some((m) => m.id === ich && m.aktiv) ? ich : null;
   return {
-    ersatzMitarbeiterId: ich && daten.mitarbeiter.some((m) => m.id === ich && m.aktiv) ? ich : null,
+    angemeldetId,
+    alleMitarbeiter: false,
+    ersatzMitarbeiterId: angemeldetId,
     neueProjekte: Object.fromEntries(unbekannteProjektnummern(daten, gelesen).map((n) => [n, true])),
     ersetzen: bisher?.ersetzen ?? true,
   };
@@ -176,7 +179,13 @@ export function ImportDialog({ onClose, navigate }: { onClose: () => void; navig
   const [datei, setDatei] = useState('');
   const [fehler, setFehler] = useState('');
   const [gelesen, setGelesen] = useState<ImportGelesen | null>(null);
-  const [optionen, setOptionen] = useState<ImportOptionen>({ ersatzMitarbeiterId: null, neueProjekte: {}, ersetzen: true });
+  const [optionen, setOptionen] = useState<ImportOptionen>({
+    angemeldetId: null,
+    alleMitarbeiter: false,
+    ersatzMitarbeiterId: null,
+    neueProjekte: {},
+    ersetzen: true,
+  });
 
   // Neu planen bei jeder Änderung der Datei, der Optionen oder des Bestands – mit neuen Kennungen
   const vorschau = useMemo(

@@ -8,6 +8,10 @@
  * bei einem Stand aus einer neueren Fassung zeigt der Bereich Demodaten und
  * lässt den gespeicherten Stand unberührt. Vor jeder Umstellung auf eine
  * neue Fassung legt `ladeDaten` eine Rohkopie `<Schlüssel>.vor-fassung-<n>` an.
+ *
+ * Fassungen: 1 – erster Stand; 2 – Rolle Controlling am Mitarbeiter,
+ * Aufschläge je Nachweiszeile, abgerechnete Stunden im festgeschriebenen Stand
+ * (`migriere`).
  */
 import { today } from '../../../shared/dates';
 import { seedDaten } from '../domain/seed';
@@ -26,7 +30,7 @@ import {
   type Projekt,
   type ZeilenText,
 } from '../domain/types';
-import { istDatum } from '../domain/zeitraum';
+import { istDatum, runden } from '../domain/zeitraum';
 
 export { DATEN_VERSION };
 
@@ -95,6 +99,8 @@ function abschnittAufbereiten(a: Roh): Abschnitt {
 
 function zeileAufbereiten(z: Roh): NachweisZeile {
   const von = datum(z.von);
+  const erfasst = stunden(z.stunden);
+  const jeAbschnitt = zahlen(z.stundenJeAbschnitt);
   return {
     schluessel: text(z.schluessel),
     von,
@@ -103,17 +109,32 @@ function zeileAufbereiten(z: Roh): NachweisZeile {
     bearbeiter: Array.isArray(z.bearbeiter) ? z.bearbeiter.map(text) : [],
     text: text(z.text),
     textBearbeitet: z.textBearbeitet === true,
-    stunden: stunden(z.stunden),
-    stundenJeAbschnitt: zahlen(z.stundenJeAbschnitt),
+    stunden: erfasst,
+    stundenJeAbschnitt: jeAbschnitt,
     stundenJeMitarbeiter: zahlen(z.stundenJeMitarbeiter),
     leistungIds: ids(z.leistungIds),
+    // Fehlen die Felder (Fassung 1), gilt: kein Aufschlag, abgerechnet = erfasst
+    aufschlag: stunden(z.aufschlag),
+    aufschlagJeAbschnitt: ohneNull(zahlen(z.aufschlagJeAbschnitt)),
+    abgerechnet: typeof z.abgerechnet === 'number' || typeof z.abgerechnet === 'string' ? stunden(z.abgerechnet) : erfasst,
+    abgerechnetJeAbschnitt: objekt(z.abgerechnetJeAbschnitt) ? zahlen(z.abgerechnetJeAbschnitt) : { ...jeAbschnitt },
   };
+}
+
+/** Nur Einträge ≠ 0, auf zwei Nachkommastellen. */
+function ohneNull(werte: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(werte)
+      .map(([k, v]): [string, number] => [k, runden(v)])
+      .filter(([, v]) => v !== 0),
+  );
 }
 
 function standAufbereiten(w: unknown): NachweisStand | null {
   const s = objekt(w);
   if (!s || !Array.isArray(s.zeilen)) return null;
   const p = objekt(s.projekt) ?? {};
+  const erfasst = stunden(s.stunden);
   return {
     zeilen: liste(s.zeilen).map(zeileAufbereiten),
     abschnitte: liste(s.abschnitte).map(abschnittAufbereiten),
@@ -124,7 +145,8 @@ function standAufbereiten(w: unknown): NachweisStand | null {
       leistungsbereich: text(p.leistungsbereich),
     },
     titel: text(s.titel),
-    stunden: stunden(s.stunden),
+    stunden: erfasst,
+    abgerechnet: typeof s.abgerechnet === 'number' || typeof s.abgerechnet === 'string' ? stunden(s.abgerechnet) : erfasst,
   };
 }
 
@@ -156,6 +178,7 @@ export function aufbereiten(roh: Partial<LeistungsnachweisDaten>): Leistungsnach
         vorname: text(m.vorname).trim(),
         nachname: text(m.nachname).trim(),
         aktiv: m.aktiv !== false,
+        controlling: m.controlling === true,
       }),
     ),
   );
@@ -224,6 +247,7 @@ export function aufbereiten(roh: Partial<LeistungsnachweisDaten>): Leistungsnach
           raster: auswahl(n.raster, RASTER, projekt.raster),
           status,
           texte: texteAufbereiten(n.texte),
+          aufschlaege: ohneNull(zahlen(n.aufschlaege)),
           bemerkung: text(n.bemerkung),
           erstellt: text(n.erstellt) || geaendert,
           geaendert,
@@ -249,12 +273,48 @@ export function aufbereiten(roh: Partial<LeistungsnachweisDaten>): Leistungsnach
 }
 
 /**
+ * Fassung 1 → 2: Die Rolle Controlling erhält, wer bisher als „Ich erfasse
+ * als“ eingestellt war (er hatte alle Rechte); alle übrigen nicht. Nachweise
+ * erhalten leere Aufschläge, festgeschriebene Stände abgerechnet = erfasst.
+ */
+function vonFassung1(roh: Roh): Roh {
+  const e = objekt(roh.einstellungen) ?? {};
+  const mitarbeiter = liste(roh.mitarbeiter);
+  const ich = idOderNull(e.mitarbeiterId);
+  const gueltig = !!ich && mitarbeiter.some((m) => text(m.id) === ich);
+  const zeileV2 = (z: Roh): Roh => ({
+    ...z,
+    aufschlag: 0,
+    aufschlagJeAbschnitt: {},
+    abgerechnet: stunden(z.stunden),
+    abgerechnetJeAbschnitt: { ...zahlen(z.stundenJeAbschnitt) },
+  });
+  return {
+    ...roh,
+    mitarbeiter: mitarbeiter.map((m) => ({ ...m, controlling: gueltig && text(m.id) === ich })),
+    nachweise: liste(roh.nachweise).map((n) => {
+      const stand = objekt(n.stand);
+      return {
+        ...n,
+        aufschlaege: {},
+        stand: stand
+          ? { ...stand, zeilen: liste(stand.zeilen).map(zeileV2), abgerechnet: stunden(stand.stunden) }
+          : n.stand,
+      };
+    }),
+  };
+}
+
+/**
  * Hebt einen älteren Stand auf die aktuelle Fassung – in einem Aufruf, Schritt
- * für Schritt. Fassung 1 ist die erste; neue Schritte kommen hier vor
- * `aufbereiten` hinzu.
+ * für Schritt; neue Schritte kommen hier vor `aufbereiten` hinzu. Auch
+ * Sicherungen älterer Fassungen laufen hierdurch.
  */
 function migriere(roh: Partial<LeistungsnachweisDaten>): LeistungsnachweisDaten {
-  return aufbereiten(roh);
+  let stand = roh as unknown as Roh;
+  const fassung = typeof stand.version === 'number' ? stand.version : 0;
+  if (fassung < 2) stand = vonFassung1(stand);
+  return aufbereiten(stand as Partial<LeistungsnachweisDaten>);
 }
 
 /** Lädt den Bestand; ohne gespeicherten Stand die Demodaten. */

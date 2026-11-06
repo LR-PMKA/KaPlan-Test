@@ -9,6 +9,11 @@
  * (`Raster`). Mehrere Mitarbeiter schreiben so an einem gemeinsamen
  * Nachweis, ohne einander zu überschreiben: Jede Person bringt nur ihre
  * eigenen Leistungen ein, der Nachweis rechnet die Zeilen daraus.
+ *
+ * Wer angemeldet ist (`Einstellungen.mitarbeiterId`), erfasst nur für sich.
+ * Personen mit der Rolle Controlling (`Mitarbeiter.controlling`) schließen
+ * Nachweise ab, schlagen Stunden je Zeile auf (`Leistungsnachweis.aufschlaege`)
+ * und exportieren – die Rechte stehen zentral in domain/rechte.ts.
  */
 export type ID = string;
 /** Datum als JJJJ-MM-TT; leer = ohne Datum. */
@@ -18,7 +23,7 @@ export type ISODate = string;
  * Fassung des gespeicherten Bestands. Neue Felder sind optional oder werden in
  * `migriere()` (store/storage.ts) nachgetragen – dann diese Zahl erhöhen.
  */
-export const DATEN_VERSION = 1;
+export const DATEN_VERSION = 2;
 
 /** Vorgabe für „Angemeldet als“. */
 export const STANDARD_BEARBEITER = 'Mitarbeiter MIC';
@@ -26,11 +31,13 @@ export const STANDARD_BEARBEITER = 'Mitarbeiter MIC';
 export type Farbmodus = 'standard' | 'kontrast';
 
 export interface Einstellungen {
-  /** Angemeldete Person (Name, wie er in der Seitenleiste steht). */
+  /** Anzeigename der angemeldeten Person; `anmelden` setzt ihn auf `mitarbeiterName`. */
   bearbeiter: string;
   /**
-   * Mitarbeiter, als der die angemeldete Person Leistungen erfasst – Vorgabe
-   * beim Erfassen und für Importzeilen ohne Angabe des Mitarbeiters.
+   * Angemeldete Person: Sie erfasst und importiert nur eigene Leistungen; ihre
+   * Rolle entscheidet über die Rechte (domain/rechte.ts). null = nicht
+   * angemeldet – dann lässt sich nichts erfassen. Solange die Daten nur im
+   * Browser liegen, ist die Anmeldung eine Auswahl ohne Kennwort.
    */
   mitarbeiterId: ID | null;
   farbmodus: Farbmodus;
@@ -43,12 +50,17 @@ export interface Einstellungen {
 /** Person, die Leistungen erbringt – projektübergreifend. */
 export interface Mitarbeiter {
   id: ID;
-  /** Kürzel, etwa „LR“ – so steht die Person auch im Import („LR: Roese, Lukas“). */
+  /** Kürzel, etwa „MM“ – so steht die Person auch im Import („MM: Mustermann, Max“). */
   kuerzel: string;
   vorname: string;
   nachname: string;
   /** Ausgeschiedene Personen bleiben mit ihren Leistungen erhalten, stehen aber nicht mehr zur Wahl. */
   aktiv: boolean;
+  /**
+   * Rolle Controlling: Auswertung, Abschluss, Aufschläge, Export und
+   * Mitarbeiterverwaltung. Mindestens eine aktive Person behält sie.
+   */
+  controlling: boolean;
 }
 
 /** „Vorname Nachname“ – so steht die Person im Leistungsnachweis. */
@@ -219,7 +231,12 @@ export interface ZeilenText {
   leistungIds: ID[];
 }
 
-/** Zeile eines Nachweises: ein Tag, eine Woche oder ein Monat mit Leistungen. */
+/**
+ * Zeile eines Nachweises: ein Tag, eine Woche oder ein Monat mit Leistungen.
+ * `stunden` sind die erfassten Stunden, `abgerechnet` die nach dem Aufschlag
+ * des Controllings (`abgerechnet = stunden + aufschlag`, nie unter 0) – so
+ * stehen sie in Druck und Excel.
+ */
 export interface NachweisZeile {
   /** Schlüssel des Zeitraums, etwa „T2026-10-30“, „W2026-44“ oder „M2026-10“ (`periodeVon`). */
   schluessel: string;
@@ -238,10 +255,26 @@ export interface NachweisZeile {
   /** Stunden je Mitarbeiter-ID – zur Kontrolle, nicht im Druck. */
   stundenJeMitarbeiter: Record<ID, number>;
   leistungIds: ID[];
+  /** Wirksamer Aufschlag der Zeile (± Stunden) = `abgerechnet - stunden`. */
+  aufschlag: number;
+  /** Wirksamer Aufschlag je Abschnitt (Schlüssel wie `stundenJeAbschnitt`); nur Einträge ≠ 0. */
+  aufschlagJeAbschnitt: Record<string, number>;
+  /** Abgerechnete Stunden der Zeile – erfasst plus Aufschlag, nie unter 0. */
+  abgerechnet: number;
+  /** Abgerechnete Stunden je Abschnitt (Schlüssel wie `stundenJeAbschnitt`, dazu Abschnitte, die nur ein Aufschlag füllt). */
+  abgerechnetJeAbschnitt: Record<string, number>;
 }
 
 /** Schlüssel in `stundenJeAbschnitt` für Leistungen ohne Abschnitt. */
 export const OHNE_ABSCHNITT = '-';
+
+/**
+ * Schlüssel eines Aufschlags in `Leistungsnachweis.aufschlaege`: Zeile und
+ * Abschnitt, etwa „M2026-10|-“ (ohne Abschnitt) oder „W2026-44|ab-1“.
+ */
+export function aufschlagSchluessel(zeilenSchluessel: string, abschnittId: ID | null): string {
+  return `${zeilenSchluessel}|${abschnittId ?? OHNE_ABSCHNITT}`;
+}
 
 /**
  * Festgeschriebener Stand eines abgeschlossenen Nachweises: so, wie er
@@ -253,7 +286,10 @@ export interface NachweisStand {
   abschnitte: Abschnitt[];
   projekt: { nummer: string; name: string; kurzname: string; leistungsbereich: string };
   titel: string;
+  /** Erfasste Stunden. */
   stunden: number;
+  /** Abgerechnete Stunden (mit den Aufschlägen beim Abschluss). */
+  abgerechnet: number;
 }
 
 export interface Leistungsnachweis {
@@ -267,6 +303,13 @@ export interface Leistungsnachweis {
   status: NachweisStatus;
   /** Von Hand bearbeitete Leistungstexte je Zeilenschlüssel. */
   texte: Record<string, ZeilenText>;
+  /**
+   * Aufschläge des Controllings in ± Stunden je Zeile und Abschnitt
+   * (`aufschlagSchluessel`), auf zwei Nachkommastellen gerundet; 0 steht nicht
+   * darin. Wie bearbeitete Texte bleibt ein Aufschlag stehen, wenn es seine
+   * Zeile gerade nicht gibt (etwa nach einem Rasterwechsel), und wirkt dann nicht.
+   */
+  aufschlaege: Record<string, number>;
   /** Hinweis unter der Tabelle (Freitext). */
   bemerkung: string;
   /** Zeitpunkte (ISO). */

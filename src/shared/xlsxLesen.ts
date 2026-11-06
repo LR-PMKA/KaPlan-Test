@@ -8,8 +8,13 @@
 
 export interface GeleseneTabelle {
   name: string;
-  /** Erste Zeile sind die Spaltenüberschriften. */
+  /** Erste Zeile sind die Spaltenüberschriften. Ganz leere Zeilen fehlen. */
   zeilen: string[][];
+  /**
+   * Nummer jeder Zeile in `zeilen` so, wie sie in Excel bzw. in der Textdatei
+   * steht (1-basiert) – leere Zeilen fehlen in `zeilen`, zählen hier aber mit.
+   */
+  zeilenNummern?: number[];
 }
 
 /* ----------------------------- ZIP ------------------------------- */
@@ -120,8 +125,14 @@ export async function xlsxLesen(datei: File): Promise<GeleseneTabelle[]> {
   for (let i = 0; i < blattEintraege.length; i++) {
     const xml = new DOMParser().parseFromString(await entpacke(puffer, daten, blattEintraege[i]), 'application/xml');
     const zeilen: string[][] = [];
+    const zeilenNummern: number[] = [];
+    let letzteNummer = 0;
 
     for (const row of Array.from(xml.getElementsByTagNameNS(NS, 'row'))) {
+      // Zeilennummer aus dem Attribut r; fehlt es, folgt sie auf die vorige
+      const r = Number(row.getAttribute('r'));
+      const nummer = Number.isInteger(r) && r > letzteNummer ? r : letzteNummer + 1;
+      letzteNummer = nummer;
       const zeile: string[] = [];
       for (const c of Array.from(row.getElementsByTagNameNS(NS, 'c'))) {
         const spalte = spaltenIndex(c.getAttribute('r') ?? 'A');
@@ -138,25 +149,48 @@ export async function xlsxLesen(datei: File): Promise<GeleseneTabelle[]> {
         while (zeile.length < spalte) zeile.push('');
         zeile[spalte] = wert.trim();
       }
-      if (zeile.some((z) => z !== '')) zeilen.push(zeile);
+      if (zeile.some((z) => z !== '')) {
+        zeilen.push(zeile);
+        zeilenNummern.push(nummer);
+      }
     }
 
-    tabellen.push({ name: namen[i] ?? `Tabelle${i + 1}`, zeilen });
+    tabellen.push({ name: namen[i] ?? `Tabelle${i + 1}`, zeilen, zeilenNummern });
   }
   return tabellen;
 }
 
 /* ----------------------------- CSV ------------------------------- */
 
-/** Liest eine Textliste; Trennzeichen wird erkannt (Semikolon, Komma, Tabulator). */
+/**
+ * Text einer Datei: UTF-8, sonst Windows-1252 (so speichert das deutsche
+ * Excel „CSV (Trennzeichen-getrennt)“); ein Byte-Order-Mark entfällt.
+ */
+export function textDekodieren(bytes: Uint8Array): string {
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    text = new TextDecoder('windows-1252').decode(bytes);
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
+ * Liest eine Textliste; Trennzeichen wird erkannt (Semikolon, Komma, Tabulator),
+ * die Zeichenkodierung ebenso (`textDekodieren`).
+ */
 export async function csvLesen(datei: File): Promise<GeleseneTabelle[]> {
-  const text = await datei.text();
+  const text = textDekodieren(new Uint8Array(await datei.arrayBuffer()));
   const erste = text.split(/\r?\n/)[0] ?? '';
   const trenner = [';', '\t', ','].reduce((a, b) =>
     (erste.split(b).length > erste.split(a).length ? b : a),
   ';');
 
   const zeilen: string[][] = [];
+  const zeilenNummern: number[] = [];
+  // Datensätze zählen wie Zeilen in Excel – auch leere; ein Umbruch in Anführungszeichen beginnt keinen neuen
+  let nummer = 1;
   let feld = '';
   let zeile: string[] = [];
   let inAnfuehrung = false;
@@ -177,15 +211,22 @@ export async function csvLesen(datei: File): Promise<GeleseneTabelle[]> {
       feld = '';
     } else if (z === '\n') {
       zeile.push(feld.trim());
-      if (zeile.some((f) => f !== '')) zeilen.push(zeile);
+      if (zeile.some((f) => f !== '')) {
+        zeilen.push(zeile);
+        zeilenNummern.push(nummer);
+      }
+      nummer++;
       zeile = [];
       feld = '';
     } else if (z !== '\r') feld += z;
   }
   zeile.push(feld.trim());
-  if (zeile.some((f) => f !== '')) zeilen.push(zeile);
+  if (zeile.some((f) => f !== '')) {
+    zeilen.push(zeile);
+    zeilenNummern.push(nummer);
+  }
 
-  return [{ name: datei.name, zeilen }];
+  return [{ name: datei.name, zeilen, zeilenNummern }];
 }
 
 /** Liest .xlsx oder .csv anhand der Dateiendung. */
@@ -220,7 +261,12 @@ export function spaltenZuordnen(
   return zuordnung;
 }
 
-/** Wandelt gebräuchliche Datumsangaben in ein ISO-Datum. */
+/**
+ * Wandelt gebräuchliche Datumsangaben in ein ISO-Datum – Excel-Tageszahl
+ * (auch mit Uhrzeit), „30.10.2026“, „30.10.26“, auch mit Uhrzeit
+ * („30.10.2026 01:00“, „30.10.26 8:15:00“), und ISO („2026-10-30“,
+ * „2026-10-30T01:00“). Die Uhrzeit fällt weg.
+ */
 export function datumLesen(wert: string): string | null {
   const text = wert.trim();
   if (!text) return null;
@@ -230,7 +276,7 @@ export function datumLesen(wert: string): string | null {
     const d = new Date(Date.UTC(1899, 11, 30) + tage * 86_400_000);
     return d.toISOString().slice(0, 10);
   }
-  const de = /^(\d{1,2})[.](\d{1,2})[.](\d{2,4})$/.exec(text);
+  const de = /^(\d{1,2})[.](\d{1,2})[.](\d{2,4})(?:,?[ T]+\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?(?:\s*Uhr)?)?$/i.exec(text);
   if (de) {
     const jahr = de[3].length === 2 ? `20${de[3]}` : de[3];
     return `${jahr}-${de[2].padStart(2, '0')}-${de[1].padStart(2, '0')}`;

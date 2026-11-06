@@ -15,7 +15,8 @@ import { mitarbeiterAuswahlText, nachNamen } from './components/common';
 import { leistungenOhneNachweis, nachweisTitel } from './domain/nachweis';
 import { STANDARD_BEARBEITER, mitarbeiterName, projektTitel, type Leistungsnachweis, type Projekt } from './domain/types';
 import { useRoute, type Route } from './lib/router';
-import { Mitarbeiter } from './pages/Mitarbeiter';
+import { Abrechnung } from './pages/controlling/Abrechnung';
+import { Controlling } from './pages/controlling/Controlling';
 import { ProjektDetail } from './pages/ProjektDetail';
 import { Projekte } from './pages/Projekte';
 import { NachweisEditor } from './pages/projekt/NachweisEditor';
@@ -37,11 +38,11 @@ export function App() {
   const sichtbar = new Set(markierte.map((p) => p.id));
   const ohneNachweis = leistungenOhneNachweis(data).filter((l) => sichtbar.has(l.projektId)).length;
   const projekt =
-    route.view === 'projekt' || route.view === 'nachweis'
+    route.view === 'projekt' || route.view === 'nachweis' || route.view === 'abrechnung'
       ? data.projekte.find((p) => p.id === route.projektId)
       : undefined;
   const nachweis =
-    route.view === 'nachweis'
+    route.view === 'nachweis' || route.view === 'abrechnung'
       ? data.nachweise.find((n) => n.id === route.nachweisId && n.projektId === route.projektId)
       : undefined;
   const ich = data.mitarbeiter.find((m) => m.id === data.einstellungen.mitarbeiterId);
@@ -84,8 +85,8 @@ export function App() {
         <NavItem
           icon="person"
           label="Mitarbeiter"
-          aktiv={route.view === 'mitarbeiter'}
-          onClick={() => gehe({ view: 'mitarbeiter' })}
+          aktiv={route.view === 'controlling' || route.view === 'abrechnung'}
+          onClick={() => gehe({ view: 'controlling', tab: 'mitarbeiter' })}
         />
         <NavItem
           icon="importieren"
@@ -165,7 +166,10 @@ export function App() {
             <LadeHinweis />
             {route.view === 'uebersicht' ? <Uebersicht navigate={gehe} onImport={importOeffnen} /> : null}
             {route.view === 'projekte' ? <Projekte navigate={gehe} /> : null}
-            {route.view === 'mitarbeiter' ? <Mitarbeiter /> : null}
+            {route.view === 'controlling' ? <Controlling tab={route.tab} navigate={gehe} /> : null}
+            {route.view === 'abrechnung' ? (
+              <Abrechnung key={route.nachweisId} projektId={route.projektId} nachweisId={route.nachweisId} navigate={gehe} />
+            ) : null}
             {route.view === 'projekt' ? (
               projekt ? (
                 <ProjektDetail projekt={projekt} tab={route.tab} navigate={gehe} />
@@ -293,7 +297,7 @@ function LadeHinweis() {
  * erfasst („Ich erfasse als“), und der Farbmodus.
  */
 function BearbeiterDialog({ onClose }: { onClose: () => void }) {
-  const { data, setEinstellungen } = useStore();
+  const { data, setEinstellungen, anmelden } = useStore();
   const [name, setName] = useState(data.einstellungen.bearbeiter);
   const [mitarbeiterId, setMitarbeiterId] = useState(data.einstellungen.mitarbeiterId ?? '');
   const [kontrast, setKontrast] = useState(data.einstellungen.farbmodus === 'kontrast');
@@ -328,9 +332,9 @@ function BearbeiterDialog({ onClose }: { onClose: () => void }) {
             type="button"
             className="btn btn-primary"
             onClick={() => {
+              anmelden(mitarbeiterId || null);
               setEinstellungen({
                 bearbeiter: name.trim() || STANDARD_BEARBEITER,
-                mitarbeiterId: mitarbeiterId || null,
                 farbmodus: kontrast ? 'kontrast' : 'standard',
               });
               onClose();
@@ -422,8 +426,10 @@ function kopfzeile(route: Route, projekt?: Projekt, nachweis?: Leistungsnachweis
       return { titel: 'Übersicht', sub: 'Leistungsnachweise und Stunden aller Projekte' };
     case 'projekte':
       return { titel: 'Projekte', sub: 'Projektverwaltung' };
-    case 'mitarbeiter':
-      return { titel: 'Mitarbeiter', sub: 'Projektübergreifend – wer Leistungen erbringt' };
+    case 'controlling':
+      return { titel: 'Controlling', sub: 'Stunden, Abrechnung und Mitarbeiter' };
+    case 'abrechnung':
+      return { titel: nachweis ? nachweisTitel(nachweis) : 'Leistungsnachweis', sub: `${projekt ? projektTitel(projekt) : 'Projekt'} · Abrechnung` };
     case 'projekt':
       return { titel: projekt?.name ?? 'Projekt', sub: 'Projektarbeitsbereich' };
     case 'nachweis':

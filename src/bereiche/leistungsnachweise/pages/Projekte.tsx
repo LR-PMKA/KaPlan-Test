@@ -200,6 +200,10 @@ export function ProjektDialog({
       return;
     }
     const id = addProjekt({ ...werte, markiert: true, abschnitte: [], logos: null });
+    if (!id) {
+      toast('Bitte zuerst anmelden.');
+      return;
+    }
     toast('Projekt angelegt.');
     onClose();
     navigate?.({ view: 'projekt', projektId: id, tab: 'nachweise' });

@@ -54,6 +54,10 @@ export function MitarbeiterDialog({
       toast('Mitarbeiter gespeichert.');
     } else {
       const id = addMitarbeiter(werte);
+      if (!id) {
+        toast('Mitarbeiter anlegen ist Personen mit der Rolle Controlling vorbehalten.');
+        return;
+      }
       toast(`„${mitarbeiterName(werte)}“ angelegt.`);
       onAngelegt?.(id);
     }
